@@ -3,7 +3,7 @@ import {
   Plus, Search, Edit3, Trash2, ExternalLink, Image as ImageIcon, 
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
-  Clock as ClockIcon, Target, Flame, Medal
+  Clock as ClockIcon, Target, Flame, Medal, Download
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -18,6 +18,7 @@ const firebaseConfig = {
   messagingSenderId: "281744457691",
   appId: "1:281744457691:web:d1eaaf8c679fb60d82f1fe"
 };
+
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -237,6 +238,41 @@ export default function App() {
     try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'animes', id)); } catch (error) {}
   };
 
+  // --- EXPORTAR A CSV ---
+  const exportToCSV = () => {
+    if (animes.length === 0) return;
+
+    // 1. Definir los títulos de las columnas
+    const headers = ['Título', 'Estado', 'Progreso', 'Total Episodios', 'Calificación', 'Géneros', 'URL de Portada'];
+    const csvRows = [headers.join(',')];
+
+    // 2. Llenar los datos fila por fila
+    animes.forEach(anime => {
+      const row = [
+        `"${(anime.title || '').replace(/"/g, '""')}"`, // Escapamos comillas dobles para que no rompan el Excel
+        `"${anime.status || ''}"`,
+        anime.progress || 0,
+        anime.totalEpisodes || 0,
+        anime.rating || 0,
+        `"${(anime.genres || []).join(', ')}"`,
+        `"${anime.coverUrl || ''}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    // 3. Crear el archivo y descargarlo
+    const csvContent = "\uFEFF" + csvRows.join('\n'); // El prefijo \uFEFF ayuda a que Excel lea las tildes correctamente
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'mi_lista_anime.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 font-sans selection:bg-purple-500/30 pb-10">
       
@@ -296,6 +332,13 @@ export default function App() {
                       className="w-full sm:w-40 bg-slate-800/50 border border-slate-700 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 transition-all"
                     />
                   </div>
+
+                  {/* Botón de Exportación CSV */}
+                  <button onClick={exportToCSV} disabled={animes.length === 0} title="Exportar a Excel/CSV" className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-4 py-2 rounded-full text-sm font-bold transition-all border border-slate-700 shadow-md">
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Exportar</span>
+                  </button>
+
                   <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-sm font-bold transition-all shadow-lg shadow-purple-600/20">
                     <Plus className="w-4 h-4" />
                     <span className="hidden sm:inline">Añadir</span>
