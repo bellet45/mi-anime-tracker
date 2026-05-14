@@ -3,7 +3,7 @@ import {
   Plus, Search, Edit3, Trash2, ExternalLink, Image as ImageIcon, 
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
-  Clock as ClockIcon, Target, Flame, Medal, Download
+  Clock as ClockIcon, Target, Flame, Medal, Download, Compass
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -18,7 +18,6 @@ const firebaseConfig = {
   messagingSenderId: "281744457691",
   appId: "1:281744457691:web:d1eaaf8c679fb60d82f1fe"
 };
-
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -37,7 +36,7 @@ export default function App() {
   const [animes, setAnimes] = useState([]);
   const [activeFilter, setActiveFilter] = useState('Todos');
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentView, setCurrentView] = useState('list'); // 'list' o 'stats'
+  const [currentView, setCurrentView] = useState('list'); // 'list', 'stats', o 'catalog'
   
   const [user, setUser] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
@@ -49,11 +48,16 @@ export default function App() {
     title: '', status: 'Viendo', progress: 0, totalEpisodes: 0, watchUrl: '', coverUrl: '', rating: 0, duration: 24, genres: []
   });
   
-  // Search API State
+  // Search API State (Modal)
   const [apiSearchQuery, setApiSearchQuery] = useState('');
   const [apiResults, setApiResults] = useState([]);
   const [isSearchingApi, setIsSearchingApi] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Catalog State
+  const [catalogAnimes, setCatalogAnimes] = useState([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
 
   // --- AUTENTICACIÓN ---
   const handleGoogleLogin = async () => {
@@ -108,7 +112,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- BUSCADOR JIKAN API ---
+  // --- BUSCADOR JIKAN API (Modal) ---
   useEffect(() => {
     const timer = setTimeout(() => {
       if (apiSearchQuery.trim().length > 2) {
@@ -125,7 +129,6 @@ export default function App() {
   }, [apiSearchQuery]);
 
   const selectApiResult = (anime) => {
-    // Extraer duración (ej. "24 min per ep" -> 24)
     let parsedDuration = 24;
     if (anime.duration) {
       const match = anime.duration.match(/(\d+)\s*min/);
@@ -142,6 +145,53 @@ export default function App() {
     });
     setApiResults([]);
     setApiSearchQuery('');
+  };
+
+  // --- CATÁLOGO GLOBAL (JIKAN API) ---
+  useEffect(() => {
+    if (currentView !== 'catalog') return;
+    
+    const fetchCatalog = async () => {
+      setIsCatalogLoading(true);
+      try {
+        let url = 'https://api.jikan.moe/v4/top/anime?limit=24'; // Top animes por defecto
+        if (catalogSearch.trim().length > 2) {
+          url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(catalogSearch)}&limit=24`;
+        }
+        const res = await fetch(url);
+        const data = await res.json();
+        setCatalogAnimes(data.data || []);
+      } catch (error) {
+        console.error("Error fetching catalog:", error);
+      } finally {
+        setIsCatalogLoading(false);
+      }
+    };
+
+    const timer = setTimeout(() => { fetchCatalog(); }, 500);
+    return () => clearTimeout(timer);
+  }, [currentView, catalogSearch]);
+
+  const handleAddFromCatalog = (anime) => {
+    let parsedDuration = 24;
+    if (anime.duration) {
+      const match = anime.duration.match(/(\d+)\s*min/);
+      if (match) parsedDuration = parseInt(match[1], 10);
+    }
+
+    setFormData({
+      title: anime.title,
+      status: 'Pendiente', // Lo añadimos como pendiente por defecto
+      progress: 0,
+      totalEpisodes: anime.episodes || 0,
+      watchUrl: '',
+      coverUrl: anime.images?.jpg?.large_image_url || '',
+      rating: 0,
+      duration: parsedDuration,
+      genres: anime.genres ? anime.genres.map(g => g.name) : []
+    });
+    setEditingId(null);
+    setIsModalOpen(true);
   };
 
   // --- CÁLCULO DE ESTADÍSTICAS ---
@@ -170,10 +220,9 @@ export default function App() {
 
     const sortedGenres = Object.entries(genreCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5); // Top 5 géneros
+      .slice(0, 5); 
     const maxGenreCount = sortedGenres.length > 0 ? sortedGenres[0][1] : 1;
 
-    // Sistema de Logros
     const achievements = [
       { id: 1, title: 'Otaku Novato', desc: 'Añade tu primer anime', unlocked: animes.length >= 1, icon: Star },
       { id: 2, title: 'Maratonista', desc: 'Mira 100 episodios en total', unlocked: totalEps >= 100, icon: Flame },
@@ -238,18 +287,14 @@ export default function App() {
     try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'animes', id)); } catch (error) {}
   };
 
-  // --- EXPORTAR A CSV ---
   const exportToCSV = () => {
     if (animes.length === 0) return;
-
-    // 1. Definir los títulos de las columnas
     const headers = ['Título', 'Estado', 'Progreso', 'Total Episodios', 'Calificación', 'Géneros', 'URL de Portada'];
     const csvRows = [headers.join(',')];
 
-    // 2. Llenar los datos fila por fila
     animes.forEach(anime => {
       const row = [
-        `"${(anime.title || '').replace(/"/g, '""')}"`, // Escapamos comillas dobles para que no rompan el Excel
+        `"${(anime.title || '').replace(/"/g, '""')}"`, 
         `"${anime.status || ''}"`,
         anime.progress || 0,
         anime.totalEpisodes || 0,
@@ -260,8 +305,7 @@ export default function App() {
       csvRows.push(row.join(','));
     });
 
-    // 3. Crear el archivo y descargarlo
-    const csvContent = "\uFEFF" + csvRows.join('\n'); // El prefijo \uFEFF ayuda a que Excel lea las tildes correctamente
+    const csvContent = "\uFEFF" + csvRows.join('\n'); 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
@@ -277,32 +321,34 @@ export default function App() {
     <div className="min-h-screen bg-[#0f172a] text-slate-200 font-sans selection:bg-purple-500/30 pb-10">
       
       {/* HEADER PRINCIPAL */}
-      <header className="sticky top-0 z-10 bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800">
+      <header className="sticky top-0 z-20 bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
             
-            <div className="flex items-center gap-3 w-full md:w-auto justify-between">
+            <div className="flex items-center gap-3 w-full lg:w-auto justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
                   <Tv className="w-6 h-6 text-white" />
                 </div>
-                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-300 hidden sm:block">
+                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-300">
                   AniTracker
                 </h1>
               </div>
 
               {/* Toggles Vista Móvil */}
-              <div className="flex bg-slate-800/50 p-1 rounded-xl md:hidden">
-                <button onClick={() => setCurrentView('list')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-slate-400'}`}>Lista</button>
-                <button onClick={() => setCurrentView('stats')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400'}`}><BarChart3 size={16}/>Stats</button>
+              <div className="flex overflow-x-auto hide-scrollbar bg-slate-800/50 p-1 rounded-xl lg:hidden max-w-[50vw]">
+                <button onClick={() => setCurrentView('list')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${currentView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-slate-400'}`}>Mi Lista</button>
+                <button onClick={() => setCurrentView('catalog')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400'}`}><Compass size={14}/>Catálogo</button>
+                <button onClick={() => setCurrentView('stats')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400'}`}><BarChart3 size={14}/>Stats</button>
               </div>
             </div>
 
-            <div className="flex flex-wrap md:flex-nowrap w-full md:w-auto items-center justify-end gap-3">
+            <div className="flex flex-wrap md:flex-nowrap w-full lg:w-auto items-center justify-end gap-3">
               
               {/* Toggles Vista Escritorio */}
-              <div className="hidden md:flex bg-slate-800/50 p-1 rounded-xl mr-2">
+              <div className="hidden lg:flex bg-slate-800/50 p-1 rounded-xl mr-2">
                 <button onClick={() => setCurrentView('list')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>Mi Lista</button>
+                <button onClick={() => setCurrentView('catalog')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={16}/>Catálogo</button>
                 <button onClick={() => setCurrentView('stats')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={16}/>Estadísticas</button>
               </div>
 
@@ -365,6 +411,80 @@ export default function App() {
         </div>
       </header>
 
+      {/* --- VISTA: CATÁLOGO MUNDIAL --- */}
+      {currentView === 'catalog' && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div>
+              <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                <Compass className="text-pink-500 w-8 h-8" />
+                Catálogo Global
+              </h2>
+              <p className="text-slate-400 mt-2">Explora todos los animes del mundo y añádelos directamente a tu lista.</p>
+            </div>
+            
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input 
+                type="text" placeholder="Buscar nuevos animes..." 
+                value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-full py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-500 transition-all shadow-lg"
+              />
+            </div>
+          </div>
+
+          {isCatalogLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <Loader2 className="w-12 h-12 mb-4 animate-spin text-pink-500" />
+              <p className="font-medium">Explorando MyAnimeList...</p>
+            </div>
+          ) : catalogAnimes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <Compass className="w-16 h-16 mb-4 opacity-20" />
+              <p className="text-lg">No se encontraron resultados.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+              {catalogAnimes.map(anime => (
+                <div key={anime.mal_id} className="group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10">
+                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
+                    <img 
+                      src={anime.images?.jpg?.large_image_url || 'https://via.placeholder.com/400x600'} 
+                      alt={anime.title} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/10 to-transparent opacity-90" />
+                    
+                    <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-lg flex items-center gap-1 border border-slate-700">
+                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                      <span className="text-xs font-bold text-white">{anime.score || 'N/A'}</span>
+                    </div>
+
+                    <div className="absolute bottom-0 left-0 w-full p-3">
+                      <h3 className="text-sm md:text-base font-bold text-white line-clamp-2 leading-tight mb-1 drop-shadow-md">
+                        {anime.title}
+                      </h3>
+                      <div className="text-xs text-slate-300 font-medium">
+                        {anime.year || anime.status} • {anime.episodes ? `${anime.episodes} EPS` : '? EPS'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
+                    <button 
+                      onClick={() => handleAddFromCatalog(anime)}
+                      className="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-pink-600 text-white py-2 rounded-xl text-sm font-bold transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> Añadir a mi lista
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
       {/* --- VISTA: DASHBOARD DE ESTADÍSTICAS --- */}
       {currentView === 'stats' && (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
@@ -377,7 +497,6 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {/* Tarjeta Tiempo */}
             <div className="bg-gradient-to-br from-indigo-900/40 to-slate-800 border border-indigo-500/30 p-6 rounded-3xl relative overflow-hidden">
               <ClockIcon className="absolute -right-4 -bottom-4 w-32 h-32 text-indigo-500/10" />
               <div className="relative z-10">
@@ -391,7 +510,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tarjeta Episodios */}
             <div className="bg-gradient-to-br from-purple-900/40 to-slate-800 border border-purple-500/30 p-6 rounded-3xl relative overflow-hidden">
               <Tv className="absolute -right-4 -bottom-4 w-32 h-32 text-purple-500/10" />
               <div className="relative z-10">
@@ -403,7 +521,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tarjeta Completados */}
             <div className="bg-gradient-to-br from-green-900/40 to-slate-800 border border-green-500/30 p-6 rounded-3xl relative overflow-hidden">
               <CheckCircle2 className="absolute -right-4 -bottom-4 w-32 h-32 text-green-500/10" />
               <div className="relative z-10">
@@ -417,7 +534,6 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Gráfico de Géneros */}
             <div className="bg-[#1e293b] border border-slate-700/50 p-6 rounded-3xl">
               <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <PieChartIcon className="w-5 h-5 text-pink-400" /> Géneros Más Vistos
@@ -448,7 +564,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Logros */}
             <div className="bg-[#1e293b] border border-slate-700/50 p-6 rounded-3xl">
               <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-yellow-400" /> Sistema de Logros
@@ -490,8 +605,8 @@ export default function App() {
             <div className="flex flex-col items-center justify-center py-20 text-slate-500">
               <Tv className="w-16 h-16 mb-4 opacity-20" />
               <p className="text-lg">No hay animes en tu lista.</p>
-              <button onClick={() => handleOpenModal()} className="mt-4 text-purple-400 hover:text-purple-300 font-semibold">
-                ¡Añade tu primer anime!
+              <button onClick={() => setCurrentView('catalog')} className="mt-4 text-purple-400 hover:text-purple-300 font-semibold">
+                ¡Explora el catálogo para añadir uno!
               </button>
             </div>
           ) : (
@@ -559,7 +674,7 @@ export default function App() {
           <div className="relative w-full max-w-xl bg-slate-800 rounded-3xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-6 border-b border-slate-700 bg-slate-800/50">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                {editingId ? 'Editar Anime' : 'Añadir Nuevo Anime'}
+                {editingId ? 'Editar Anime' : 'Añadir a mi lista'}
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-white transition-colors">
                 <X className="w-6 h-6" />
