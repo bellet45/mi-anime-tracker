@@ -465,9 +465,9 @@ export default function App() {
               <p className="text-lg">No se encontraron resultados.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-6">
               {catalogAnimes.map(anime => (
-                <div key={anime.mal_id} className="group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10">
+                <div key={anime.mal_id} className="group relative bg-[#1e293b] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10">
                   <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
                     <img 
                       src={anime.images?.jpg?.large_image_url || 'https://via.placeholder.com/400x600'} 
@@ -476,27 +476,29 @@ export default function App() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/10 to-transparent opacity-90" />
                     
-                    <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-lg flex items-center gap-1 border border-slate-700">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs font-bold text-white">{anime.score || 'N/A'}</span>
+                    <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 bg-slate-900/80 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg flex items-center gap-1 border border-slate-700">
+                      <Star className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-yellow-500 fill-yellow-500" />
+                      <span className="text-[10px] sm:text-xs font-bold text-white">{anime.score || 'N/A'}</span>
                     </div>
 
-                    <div className="absolute bottom-0 left-0 w-full p-3">
-                      <h3 className="text-sm md:text-base font-bold text-white line-clamp-2 leading-tight mb-1 drop-shadow-md">
+                    <div className="absolute bottom-0 left-0 w-full p-2 sm:p-3">
+                      <h3 className="text-xs sm:text-base font-bold text-white line-clamp-2 leading-tight mb-0.5 sm:mb-1 drop-shadow-md">
                         {anime.title}
                       </h3>
-                      <div className="text-xs text-slate-300 font-medium">
+                      <div className="text-[9px] sm:text-xs text-slate-300 font-medium">
                         {anime.year || anime.status} • {anime.episodes ? `${anime.episodes} EPS` : '? EPS'}
                       </div>
                     </div>
                   </div>
                   
-                  <div className="p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
+                  <div className="p-2 sm:p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
                     <button 
                       onClick={() => handleAddFromCatalog(anime)}
-                      className="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-pink-600 text-white py-2 rounded-xl text-sm font-bold transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-700 hover:bg-pink-600 text-white py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-sm font-bold transition-colors"
                     >
-                      <Plus className="w-4 h-4" /> Añadir a mi lista
+                      <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Añadir a mi lista</span>
+                      <span className="sm:hidden">Añadir</span>
                     </button>
                   </div>
                 </div>
@@ -631,7 +633,7 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <div className={listLayout === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "flex flex-col gap-4"}>
+            <div className={listLayout === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6" : "flex flex-col gap-3 sm:gap-4"}>
               {filteredAnimes.map(anime => {
                 const statusConf = STATUS_CONFIG[anime.status];
                 const StatusIcon = statusConf.icon;
@@ -639,44 +641,45 @@ export default function App() {
 
                 if (listLayout === 'grid') {
                   return (
-                    <div key={anime.id} className="group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10">
+                    <div key={anime.id} className="group relative bg-[#1e293b] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10">
                       <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
                         {anime.coverUrl ? (
                           <img src={anime.coverUrl} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-12 h-12" /></div>
+                          <div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8 sm:w-12 sm:h-12" /></div>
                         )}
                         
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent opacity-80" />
                         
-                        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleOpenModal(anime)} className="p-2 bg-black/60 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(anime.id)} className="p-2 bg-black/60 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex flex-col sm:flex-row gap-1.5 sm:gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-black/60 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                          <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-black/60 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
                         </div>
 
-                        <div className="absolute top-3 left-3">
-                          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
-                            <StatusIcon className="w-3.5 h-3.5" /> {anime.status}
+                        <div className="absolute top-2 left-2 sm:top-3 sm:left-3">
+                          <div className={`flex items-center gap-1 sm:gap-1.5 px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-xs font-semibold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
+                            <StatusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> 
+                            <span className="hidden sm:inline">{anime.status}</span>
                           </div>
                         </div>
 
-                        <div className="absolute bottom-0 left-0 w-full p-4">
-                          <h3 className="text-lg font-bold text-white line-clamp-2 leading-tight mb-2 drop-shadow-md">{anime.title}</h3>
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs text-slate-300 font-medium">
-                              <span>EP {anime.progress} / {anime.totalEpisodes || '?'}</span>
+                        <div className="absolute bottom-0 left-0 w-full p-2 sm:p-4">
+                          <h3 className="text-xs sm:text-lg font-bold text-white line-clamp-2 leading-tight mb-1 sm:mb-2 drop-shadow-md">{anime.title}</h3>
+                          <div className="space-y-1 sm:space-y-1.5">
+                            <div className="flex justify-between text-[9px] sm:text-xs text-slate-300 font-medium">
+                              <span>EP {anime.progress} <span className="hidden sm:inline">/ {anime.totalEpisodes || '?'}</span></span>
                               <span>{progressPercent}%</span>
                             </div>
-                            <div className="h-1.5 w-full bg-slate-700/50 rounded-full overflow-hidden">
+                            <div className="h-1 sm:h-1.5 w-full bg-slate-700/50 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} />
                             </div>
                           </div>
                         </div>
                       </div>
                       {anime.watchUrl && (
-                        <div className="bg-slate-800/50 p-3 border-t border-slate-700/50">
-                          <a href={anime.watchUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-medium transition-colors">
-                            Ir al sitio <ExternalLink className="w-4 h-4" />
+                        <div className="bg-slate-800/50 p-2 sm:p-3 border-t border-slate-700/50 hidden sm:block">
+                          <a href={anime.watchUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-1.5 sm:py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium transition-colors">
+                            Ir al sitio <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4" />
                           </a>
                         </div>
                       )}
@@ -684,52 +687,48 @@ export default function App() {
                   );
                 }
 
+                // VISTA DE LISTA (HORIZONTAL)
                 return (
-                  <div key={anime.id} className="group flex flex-col sm:flex-row bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10">
-                    <div className="relative w-full sm:w-32 h-48 sm:h-auto shrink-0 bg-slate-800">
+                  <div key={anime.id} className="group flex flex-row bg-[#1e293b] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10">
+                    <div className="relative w-24 sm:w-32 shrink-0 bg-slate-800">
                       {anime.coverUrl ? (
                         <img src={anime.coverUrl} alt={anime.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8" /></div>
                       )}
-                      <div className="absolute top-2 left-2 sm:hidden">
-                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
-                          <StatusIcon className="w-3 h-3" /> {anime.status}
-                        </div>
-                      </div>
                     </div>
                     
-                    <div className="flex-1 p-4 sm:p-5 flex flex-col justify-center">
-                      <div className="flex justify-between items-start gap-4">
-                        <div>
-                          <div className="hidden sm:flex items-center gap-1.5 mb-2">
-                            <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
-                              <StatusIcon className="w-3.5 h-3.5" /> {anime.status}
+                    <div className="flex-1 p-3 sm:p-5 flex flex-col justify-between min-w-0">
+                      <div className="flex justify-between items-start gap-2 sm:gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2">
+                            <div className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-[10px] sm:text-xs font-bold ${statusConf.bg} ${statusConf.color} border ${statusConf.border} w-fit`}>
+                              <StatusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {anime.status}
                             </div>
                           </div>
-                          <h3 className="text-xl font-bold text-white mb-1">{anime.title}</h3>
+                          <h3 className="text-sm sm:text-xl font-bold text-white mb-0.5 sm:mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
                           {anime.genres && anime.genres.length > 0 && (
-                            <p className="text-xs text-slate-400 mb-3">{anime.genres.slice(0,3).join(', ')}</p>
+                            <p className="text-[10px] sm:text-xs text-slate-400 truncate">{anime.genres.slice(0,3).join(', ')}</p>
                           )}
                         </div>
                         
-                        <div className="flex gap-2 shrink-0">
-                          <button onClick={() => handleOpenModal(anime)} className="p-2 bg-slate-800 hover:bg-purple-600 rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(anime.id)} className="p-2 bg-slate-800 hover:bg-red-600 rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
+                        <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2 shrink-0">
+                          <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                          <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                           {anime.watchUrl && (
-                            <a href={anime.watchUrl} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-800 hover:bg-blue-600 rounded-xl text-white transition-colors" title="Ver Anime">
-                              <ExternalLink className="w-4 h-4" />
+                            <a href={anime.watchUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 sm:p-2 bg-slate-800 hover:bg-blue-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Ver Anime">
+                              <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </a>
                           )}
                         </div>
                       </div>
                       
-                      <div className="mt-4 max-w-md w-full">
-                        <div className="flex justify-between text-xs text-slate-300 font-medium mb-1.5">
+                      <div className="mt-2 sm:mt-4 w-full">
+                        <div className="flex justify-between text-[10px] sm:text-xs text-slate-300 font-medium mb-1 sm:mb-1.5">
                           <span>Episodios: {anime.progress} / {anime.totalEpisodes || '?'}</span>
                           <span>{progressPercent}%</span>
                         </div>
-                        <div className="h-2 w-full bg-slate-700/50 rounded-full overflow-hidden">
+                        <div className="h-1.5 sm:h-2 w-full bg-slate-700/50 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} />
                         </div>
                       </div>
