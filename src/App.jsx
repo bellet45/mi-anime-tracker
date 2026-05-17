@@ -391,7 +391,7 @@ export default function App() {
                   </div>
                   
                   {/* Toggles de Vista Grid/Lista */}
-                  <div className="flex bg-slate-800 border border-slate-700 rounded-full p-1 hidden sm:flex">
+                  <div className="flex shrink-0 bg-slate-800 border border-slate-700 rounded-full p-1">
                     <button onClick={() => setListLayout('grid')} className={`p-1.5 rounded-full transition-all ${listLayout === 'grid' ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>
                       <LayoutGrid className="w-4 h-4" />
                     </button>
