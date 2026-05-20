@@ -4,7 +4,7 @@ import {
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
   Clock as ClockIcon, Target, Flame, Medal, Download, Compass,
-  LayoutGrid, List
+  LayoutGrid, List, Calendar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -60,6 +60,10 @@ export default function App() {
   const [catalogAnimes, setCatalogAnimes] = useState([]);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+
+  // Calendar State
+  const [calendarAnimes, setCalendarAnimes] = useState([]);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
 
   // --- AUTENTICACIÓN ---
   const handleGoogleLogin = async () => {
@@ -195,6 +199,46 @@ export default function App() {
     setEditingId(null);
     setIsModalOpen(true);
   };
+
+  // --- CALENDARIO DE ESTRENOS ---
+  useEffect(() => {
+    if (currentView !== 'calendar') return;
+    
+    let isActive = true;
+    const fetchViendoSchedules = async () => {
+      setIsCalendarLoading(true);
+      const viendoAnimes = animes.filter(a => a.status === 'Viendo');
+      const schedules = [];
+      
+      for (const anime of viendoAnimes) {
+        if (!isActive) break;
+        try {
+          const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.title)}&status=airing&limit=1`);
+          const data = await res.json();
+          
+          if (data.data && data.data.length > 0 && data.data[0].broadcast?.day) {
+             schedules.push({
+               ...anime,
+               broadcast: data.data[0].broadcast,
+               apiEpisodes: data.data[0].episodes
+             });
+          }
+          // Retraso seguro de la API (Jikan permite 3 peticiones por segundo)
+          await new Promise(r => setTimeout(r, 350));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      
+      if (isActive) {
+        setCalendarAnimes(schedules);
+        setIsCalendarLoading(false);
+      }
+    };
+
+    fetchViendoSchedules();
+    return () => { isActive = false; };
+  }, [currentView, animes]);
 
   // --- CÁLCULO DE ESTADÍSTICAS ---
   const stats = useMemo(() => {
@@ -344,6 +388,7 @@ export default function App() {
               <div className="flex overflow-x-auto hide-scrollbar bg-slate-800/50 p-1 rounded-xl lg:hidden max-w-[50vw]">
                 <button onClick={() => setCurrentView('list')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${currentView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-slate-400'}`}>Mi Lista</button>
                 <button onClick={() => setCurrentView('catalog')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400'}`}><Compass size={14}/>Catálogo</button>
+                <button onClick={() => setCurrentView('calendar')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}><Calendar size={14}/>Calendario</button>
                 <button onClick={() => setCurrentView('stats')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400'}`}><BarChart3 size={14}/>Stats</button>
               </div>
             </div>
@@ -354,6 +399,7 @@ export default function App() {
               <div className="hidden lg:flex bg-slate-800/50 p-1 rounded-xl mr-2">
                 <button onClick={() => setCurrentView('list')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>Mi Lista</button>
                 <button onClick={() => setCurrentView('catalog')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={16}/>Catálogo</button>
+                <button onClick={() => setCurrentView('calendar')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Calendar size={16}/>Calendario</button>
                 <button onClick={() => setCurrentView('stats')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={16}/>Estadísticas</button>
               </div>
 
@@ -500,6 +546,58 @@ export default function App() {
                       <span className="hidden sm:inline">Añadir a mi lista</span>
                       <span className="sm:hidden">Añadir</span>
                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* --- VISTA: CALENDARIO DE ESTRENOS --- */}
+      {currentView === 'calendar' && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+              <Calendar className="text-emerald-500 w-8 h-8" />
+              Calendario de Estrenos
+            </h2>
+            <p className="text-slate-400 mt-2">Cuenta regresiva exacta para los próximos episodios de los animes que estás viendo actualmente.</p>
+          </div>
+
+          {isCalendarLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <Loader2 className="w-12 h-12 mb-4 animate-spin text-emerald-500" />
+              <p className="font-medium">Sincronizando horarios con Japón...</p>
+            </div>
+          ) : calendarAnimes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 bg-[#1e293b] rounded-3xl border border-slate-700/50 p-8 text-center max-w-2xl mx-auto shadow-xl">
+              <Calendar className="w-16 h-16 mb-4 opacity-20 text-emerald-500" />
+              <p className="text-xl font-bold text-slate-300 mb-2">No hay estrenos próximos</p>
+              <p className="text-sm text-slate-400">Asegúrate de tener animes en estado <span className="text-purple-400 font-bold">"Viendo"</span> que estén en emisión actualmente para verlos aquí.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {calendarAnimes.map(anime => (
+                <div key={anime.id} className="bg-[#1e293b] border border-slate-700/50 p-5 rounded-2xl flex items-center gap-5 hover:border-emerald-500/50 transition-colors hover:shadow-xl hover:shadow-emerald-500/10 group">
+                  <div className="relative shrink-0">
+                    <img src={anime.coverUrl} alt={anime.title} className="w-24 h-32 object-cover rounded-xl shadow-md group-hover:scale-105 transition-transform" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }}/>
+                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg">
+                      EP {anime.progress + 1}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-white line-clamp-2 mb-1" title={anime.title}>{anime.title}</h3>
+                    <div className="text-xs text-slate-400 mb-3 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-500" />
+                      {anime.broadcast.day} a las {anime.broadcast.time} (JST)
+                    </div>
+                    <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-700/50">
+                      <p className="text-[10px] text-emerald-500 uppercase tracking-wider font-bold mb-1">Se estrena en:</p>
+                      <div className="text-slate-100 font-mono font-bold text-sm sm:text-base">
+                        <CountdownTimer broadcast={anime.broadcast} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -870,4 +968,58 @@ function PieChartIcon(props) {
       <path d="M22 12A10 10 0 0 0 12 2v10z" />
     </svg>
   );
+}
+
+// Componente de Cuenta Regresiva (Calcula JST -> Hora Local automáticamente)
+function CountdownTimer({ broadcast }) {
+  const [timeLeft, setTimeLeft] = useState('Calculando...');
+
+  useEffect(() => {
+    if (!broadcast || !broadcast.day || !broadcast.time) {
+      setTimeLeft('Horario desconocido');
+      return;
+    }
+
+    const calculateTimeLeft = () => {
+      const daysMap = { 'Sundays': 0, 'Mondays': 1, 'Tuesdays': 2, 'Wednesdays': 3, 'Thursdays': 4, 'Fridays': 5, 'Saturdays': 6 };
+      const targetDay = daysMap[broadcast.day];
+      if (targetDay === undefined) return 'Horario desconocido';
+
+      const [hours, minutes] = broadcast.time.split(':').map(Number);
+      
+      const now = new Date();
+      // Obtenemos la hora actual en la zona horaria de Japón
+      const tokyoStr = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+      const tokyoNow = new Date(tokyoStr);
+
+      let target = new Date(tokyoNow);
+      target.setHours(hours, minutes, 0, 0);
+
+      // Encontrar el siguiente día de emisión
+      let daysToAdd = targetDay - tokyoNow.getDay();
+      if (daysToAdd < 0 || (daysToAdd === 0 && target.getTime() <= tokyoNow.getTime())) {
+        daysToAdd += 7;
+      }
+      target.setDate(target.getDate() + daysToAdd);
+
+      const diff = target.getTime() - tokyoNow.getTime();
+      if (diff <= 0) return '¡Emitiéndose ahora!';
+
+      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const m = Math.floor((diff / 1000 / 60) % 60);
+      const s = Math.floor((diff / 1000) % 60);
+
+      return `${d}d ${h}h ${m}m ${s}s`;
+    };
+
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [broadcast]);
+
+  return <>{timeLeft}</>;
 }
