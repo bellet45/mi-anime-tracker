@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Search, Edit3, Trash2, ExternalLink, Image as ImageIcon, 
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
   Clock as ClockIcon, Target, Flame, Medal, Download, Compass,
-  LayoutGrid, List, Calendar
+  LayoutGrid, List, Calendar, Upload
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -64,6 +64,11 @@ export default function App() {
   // Calendar State
   const [calendarAnimes, setCalendarAnimes] = useState([]);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+
+  // Import State
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 }); // NUEVO: Estado de progreso
+  const fileInputRef = useRef(null);
 
   // --- AUTENTICACIÓN ---
   const handleGoogleLogin = async () => {
@@ -336,6 +341,117 @@ export default function App() {
     } catch (error) {}
   };
 
+  // --- IMPORTAR DESDE MYANIMELIST/ANILIST (XML) ---
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportProgress({ current: 0, total: 0 });
+    try {
+      const text = await file.text();
+      
+      if (!file.name.toLowerCase().endsWith('.xml')) {
+         alert("El archivo debe ser un .xml exportado de MyAnimeList o AniList.");
+         setIsImporting(false);
+         return;
+      }
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(text, "text/xml");
+      const animeNodes = xmlDoc.getElementsByTagName("anime");
+      
+      const animesToProcess = [];
+      for (let i = 0; i < animeNodes.length; i++) {
+        const node = animeNodes[i];
+        
+        // Función auxiliar para leer etiquetas y limpiar CDATA
+        const getVal = (tag) => {
+          let val = node.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+          return val.replace(/^<!\[CDATA\[(.*)\]\]>$/, '$1'); 
+        };
+
+        const malId = getVal("series_animedb_id");
+        const title = getVal("series_title") || 'Desconocido';
+        const progress = parseInt(getVal("my_watched_episodes")) || 0;
+        const totalEpisodes = parseInt(getVal("series_episodes")) || 0;
+        
+        // Detección Inteligente de Estado (Soporta IDs numéricos y textos de AniList)
+        const rawStatus = getVal("my_status").toLowerCase();
+        let status = 'Pendiente';
+        if (['1', 'watching', 'current'].includes(rawStatus)) status = 'Viendo';
+        else if (['2', 'completed'].includes(rawStatus)) status = 'Terminado';
+        else if (['3', 'on-hold', 'paused'].includes(rawStatus)) status = 'Pausado';
+        else if (['4', 'dropped'].includes(rawStatus)) status = 'Abandonado';
+        else if (['6', 'plan to watch', 'planning'].includes(rawStatus)) status = 'Pendiente';
+
+        // Detección de calificación (Convierte la escala de 100 de AniList a escala de 10 automáticamente)
+        let rating = parseFloat(getVal("my_score")) || 0;
+        if (rating > 10) rating = Math.round(rating / 10);
+
+        let coverUrl = getVal("series_image") || getVal("anime_image_path") || '';
+        
+        animesToProcess.push({ 
+          malId, title, progress, totalEpisodes, status, rating, 
+          coverUrl, duration: 24, watchUrl: '', genres: [] 
+        });
+      }
+
+      if (animesToProcess.length === 0) {
+         alert("No se encontraron animes en el archivo.");
+         setIsImporting(false);
+         return;
+      }
+
+      setImportProgress({ current: 0, total: animesToProcess.length });
+      const finalAnimes = [];
+
+      // Descarga de portadas profundas (Si el XML no trae la foto, la buscamos por su ID)
+      for (let i = 0; i < animesToProcess.length; i++) {
+         const anime = animesToProcess[i];
+         setImportProgress({ current: i + 1, total: animesToProcess.length });
+         
+         if (!anime.coverUrl && anime.malId) {
+           try {
+              const res = await fetch(`https://api.jikan.moe/v4/anime/${anime.malId}`);
+              if (res.ok) {
+                 const data = await res.json();
+                 anime.coverUrl = data.data?.images?.jpg?.large_image_url || '';
+                 anime.genres = data.data?.genres ? data.data.genres.map(g => g.name) : [];
+                 
+                 if (data.data?.duration) {
+                   const match = data.data.duration.match(/(\d+)\s*min/);
+                   if (match) anime.duration = parseInt(match[1], 10);
+                 }
+              }
+              // Retraso de seguridad (400ms) para que la API no nos bloquee por descargar rápido
+              await new Promise(r => setTimeout(r, 400));
+           } catch (err) {
+              console.error("Error descargando portada de", anime.title);
+           }
+         }
+         finalAnimes.push(anime);
+      }
+
+      // Guardar todo en Firebase de forma segura
+      if (user) {
+        const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
+        const savePromises = finalAnimes.map(anime => 
+          setDoc(doc(animesRef, Date.now().toString() + Math.random().toString(36).substring(2, 9)), anime)
+        );
+        await Promise.all(savePromises);
+        alert(`¡Éxito! Se han importado ${finalAnimes.length} animes con sus imágenes, estados y calificaciones correctamente.`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Hubo un error al procesar el archivo. Verifica que sea un XML válido.");
+    } finally {
+      setIsImporting(false);
+      setImportProgress({ current: 0, total: 0 });
+      e.target.value = null; 
+    }
+  };
+
   const exportToCSV = () => {
     if (animes.length === 0) return;
     const headers = ['Título', 'Estado', 'Progreso', 'Total Episodios', 'Calificación', 'Géneros', 'URL de Portada'];
@@ -446,7 +562,17 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Botón de Exportación CSV */}
+                  {/* Botones de Importación y Exportación */}
+                  <input type="file" accept=".xml" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={isImporting || !user} title="Importar lista (XML)" className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-4 py-2 rounded-full text-sm font-bold transition-all border border-slate-700 shadow-md">
+                    {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    <span className="hidden sm:inline">
+                      {isImporting && importProgress.total > 0 
+                        ? `Importando... ${importProgress.current}/${importProgress.total}` 
+                        : (isImporting ? 'Cargando...' : 'Importar')}
+                    </span>
+                  </button>
+
                   <button onClick={exportToCSV} disabled={animes.length === 0} title="Exportar a Excel/CSV" className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-4 py-2 rounded-full text-sm font-bold transition-all border border-slate-700 shadow-md">
                     <Download className="w-4 h-4" />
                     <span className="hidden sm:inline">Exportar</span>
