@@ -1,16 +1,33 @@
-# React + Vite
+# 📺 AniTracker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+¡Bienvenido a **AniTracker**! Una aplicación web moderna y minimalista diseñada para los amantes del anime, manhwa y manhua que quieren llevar un control detallado de sus series favoritas. 
 
-Currently, two official plugins are available:
+Organiza tus listas de forma eficiente, visualiza estadísticas de tus hábitos de consumo y mantente al día con tus próximos estrenos.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+> 🌐 **Despliegue en vivo:** [Visita AniTracker aquí](https://mi-anime-tracker.vercel.app)
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## ✨ Características Principales
 
-## Expanding the ESLint configuration
+* 🔒 **Autenticación Segura:** Inicio de sesión rápido e integrado con **Google Login**.
+* 🗂️ **Gestión de Listas:** Clasifica tus series en diferentes estados: *Viendo, Pendiente, Terminado, Pausado y Abandonado*.
+* 📊 **Sección de Estadísticas:** Analiza tu progreso y el tiempo invertido en tus series.
+* 📅 **Calendario de Estrenos:** No te pierdas ningún episodio con un calendario integrado.
+* 🎨 **Interfaz Moderna:** Diseño oscuro (Dark Mode) optimizado con acentos púrpuras para una experiencia visual limpia y cómoda.
+* ⚡ **Rendimiento Extremo:** Construido sobre **Vite** para cargas instantáneas.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+---
+
+## 🛠️ Tecnologías Utilizadas
+
+* **Frontend:** [React.js](https://react.dev/) + JavaScript
+* **Herramienta de Construcción:** [Vite](https://vitejs.dev/)
+* **Base de Datos y Auth:** [Firebase](https://firebase.google.com/)
+* **Despliegue:** [Vercel](https://vercel.com/)
+
+---
+
+
+
+## Desarrollado con 💜 por bellet45
