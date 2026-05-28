@@ -3,10 +3,10 @@ import {
   Plus, Search, Edit3, Trash2, ExternalLink, Image as ImageIcon, 
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
-  Clock as ClockIcon, Target, Flame, Medal, Download, Compass,
+  Target, Flame, Medal, Download, Compass,
   LayoutGrid, List, Calendar, Upload, Share2, Users, ArrowUpRight,
   Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart,
-  Gamepad2, Dices, Award, Zap
+  Gamepad2, Dices, Award, Zap, Menu
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -130,6 +130,10 @@ export default function App() {
   // Celebraciones
   const [celebrationAnime, setCelebrationAnime] = useState(null);
 
+  // --- NUEVOS ESTADOS DE RESPONSIVIDAD (MENÚ DESPLEGABLE Y BÚSQUEDA MÓVIL) ---
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+
   // --- NUEVOS ESTADOS DE GAMIFICACIÓN Y RULETA ---
   const [quests, setQuests] = useState([
     { id: 'maraton', text: 'Maratón Diario: Avanza +1 episodio en tu lista', points: 50, done: false },
@@ -156,28 +160,32 @@ export default function App() {
     }, 4000);
   };
 
-  // Inicializar Quests desde LocalStorage en base a la fecha de hoy
+  // Inicializar Quests desde LocalStorage de forma segura con try-catch
   useEffect(() => {
-    const storedDate = localStorage.getItem('otaku_quest_date');
-    const todayStr = new Date().toDateString();
-    
-    if (storedDate !== todayStr) {
-      localStorage.setItem('otaku_quest_date', todayStr);
-      localStorage.setItem('otaku_quests', JSON.stringify([
-        { id: 'maraton', text: 'Maratón Diario: Avanza +1 episodio en tu lista', points: 50, done: false },
-        { id: 'ruleta', text: 'El Oráculo: Haz girar la Ruleta del Destino hoy', points: 50, done: false },
-        { id: 'explorar', text: 'Explorador: Busca un anime en el Catálogo Global', points: 50, done: false }
-      ]));
-      localStorage.setItem('otaku_claimed_quests', JSON.stringify([]));
-      localStorage.setItem('otaku_bonus_xp', '0');
-    } else {
-      const savedQuests = localStorage.getItem('otaku_quests');
-      const savedClaimed = localStorage.getItem('otaku_claimed_quests');
-      const savedBonusXp = localStorage.getItem('otaku_bonus_xp');
+    try {
+      const storedDate = localStorage.getItem('otaku_quest_date');
+      const todayStr = new Date().toDateString();
       
-      if (savedQuests) setQuests(JSON.parse(savedQuests));
-      if (savedClaimed) setClaimedQuests(JSON.parse(savedClaimed));
-      if (savedBonusXp) setBonusXp(parseInt(savedBonusXp, 10) || 0);
+      if (storedDate !== todayStr) {
+        localStorage.setItem('otaku_quest_date', todayStr);
+        localStorage.setItem('otaku_quests', JSON.stringify([
+          { id: 'maraton', text: 'Maratón Diario: Avanza +1 episodio en tu lista', points: 50, done: false },
+          { id: 'ruleta', text: 'El Oráculo: Haz girar la Ruleta del Destino hoy', points: 50, done: false },
+          { id: 'explorar', text: 'Explorador: Busca un anime en el Catálogo Global', points: 50, done: false }
+        ]));
+        localStorage.setItem('otaku_claimed_quests', JSON.stringify([]));
+        localStorage.setItem('otaku_bonus_xp', '0');
+      } else {
+        const savedQuests = localStorage.getItem('otaku_quests');
+        const savedClaimed = localStorage.getItem('otaku_claimed_quests');
+        const savedBonusXp = localStorage.getItem('otaku_bonus_xp');
+        
+        if (savedQuests) setQuests(JSON.parse(savedQuests));
+        if (savedClaimed) setClaimedQuests(JSON.parse(savedClaimed));
+        if (savedBonusXp) setBonusXp(parseInt(savedBonusXp, 10) || 0);
+      }
+    } catch (e) {
+      console.error("Error inicializando almacenamiento local:", e);
     }
   }, []);
 
@@ -434,7 +442,7 @@ export default function App() {
     let isActive = true;
     const fetchViendoSchedules = async () => {
       setIsCalendarLoading(true);
-      const viendoAnimes = animes.filter(a => a.status === 'Viendo');
+      const viendoAnimes = animes.filter(a => a && a.status === 'Viendo');
       const schedules = [];
       
       for (const anime of viendoAnimes) {
@@ -468,6 +476,7 @@ export default function App() {
 
   // --- WIKI / DETALLES DE ANIME ---
   const handleOpenDetails = async (anime) => {
+    if (!anime) return;
     setSelectedDetails(anime);
     setDetailsExtraInfo(null);
     setIsDetailsLoading(true);
@@ -542,6 +551,18 @@ export default function App() {
     }
   };
 
+  // Auxiliar seguro para formatear fechas de Firestore y evitar RangeError
+  const safeFormatDate = (timestamp) => {
+    if (!timestamp) return 'Fecha desconocida';
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Fecha desconocida';
+      return date.toLocaleDateString();
+    } catch (e) {
+      return 'Fecha desconocida';
+    }
+  };
+
   // --- CÁLCULO DE ESTADÍSTICAS & GAMIFICACIÓN ---
   const stats = useMemo(() => {
     let totalEps = 0;
@@ -550,6 +571,7 @@ export default function App() {
     let genreCounts = {};
 
     animes.forEach(a => {
+      if (!a) return;
       const eps = a.progress || 0;
       totalEps += eps;
       totalMinutes += eps * (a.duration || 24);
@@ -608,330 +630,14 @@ export default function App() {
 
   // --- FILTRADO DE ANIME ---
   const filteredAnimes = animes.filter(anime => {
+    if (!anime) return false;
     const matchesSearch = (anime.title || '').toLowerCase().includes((searchQuery || '').toLowerCase());
     const matchesFilter = activeFilter === 'Todos' || anime.status === activeFilter;
     return matchesSearch && matchesFilter;
   });
 
-  const handleOpenModal = (anime = null) => {
-    setErrorMsg('');
-    setApiResults([]);
-    setApiSearchQuery('');
-    if (anime) {
-      setFormData({
-        title: anime.title || '',
-        status: anime.status || 'Viendo',
-        progress: anime.progress || 0,
-        totalEpisodes: anime.totalEpisodes || 12,
-        watchUrl: anime.watchUrl || '',
-        coverUrl: anime.coverUrl || '',
-        rating: anime.rating || 0,
-        duration: anime.duration || 24,
-        genres: anime.genres || [],
-        malId: anime.malId || '',
-        notes: anime.notes || ''
-      });
-      setEditingId(anime.id);
-    } else {
-      setFormData({ title: '', status: 'Viendo', progress: 0, totalEpisodes: 0, watchUrl: '', coverUrl: '', rating: 0, duration: 24, genres: [], malId: '', notes: '' });
-      setEditingId(null);
-    }
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setEditingId(null);
-  };
-
-  const handleSave = async () => {
-    if (!formData.title.trim()) return setErrorMsg('El título es obligatorio.');
-    if (!user) return setErrorMsg('No estás conectado. Recarga la página.');
-
-    try {
-      const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
-      await setDoc(doc(animesRef, editingId || Date.now().toString()), formData);
-      showToast(editingId ? "¡Anime actualizado!" : "¡Añadido a tu lista con éxito!", "success");
-      handleCloseModal();
-    } catch (error) { setErrorMsg('Error al guardar en la nube.'); }
-  };
-
-  const handleDelete = async (id) => {
-    if (!user) return;
-    try { 
-      const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
-      await deleteDoc(doc(animesRef, id)); 
-      showToast("Anime eliminado de tu lista", "info");
-    } catch (error) {}
-  };
-
-  // --- COPIADO SEGURO AL PORTAPAPELES (Iframe friendly) ---
-  const handleShareLink = (friendId) => {
-    const profileLink = `${window.location.origin}/?friend=${friendId}`;
-    const textToCopy = profileLink;
-    
-    // Método alternativo robusto para iframes
-    const textArea = document.createElement("textarea");
-    textArea.value = textToCopy;
-    textArea.style.position = "absolute";
-    textArea.style.opacity = "0";
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      showToast("¡Enlace de perfil copiado al portapapeles!", "success");
-    } catch (err) {
-      showToast("No se pudo copiar el enlace. Cópialo manualmente.", "warning");
-    }
-    document.body.removeChild(textArea);
-  };
-
-  // Copiar anime de la lista de un amigo a la tuya
-  const handleCloneAnime = async (anime) => {
-    if (!user) {
-      showToast("Debes iniciar sesión para clonar animes.", "warning");
-      return;
-    }
-    try {
-      const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
-      const cloneData = {
-        title: anime.title,
-        status: 'Pendiente',
-        progress: 0,
-        totalEpisodes: anime.totalEpisodes || 0,
-        watchUrl: anime.watchUrl || '',
-        coverUrl: anime.coverUrl || '',
-        rating: 0,
-        duration: anime.duration || 24,
-        genres: anime.genres || [],
-        malId: anime.malId || ''
-      };
-      await setDoc(doc(animesRef, Date.now().toString() + Math.random().toString(36).substring(2, 5)), cloneData);
-      showToast(`¡Clonado "${anime.title}" a tu lista como Pendiente!`, "success");
-    } catch (e) {
-      showToast("Error al copiar anime.", "error");
-    }
-  };
-
-  // --- IMPORTADOR INTELIGENTE XML CON NOTIFICACIÓN FLUIDA ---
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    setImportProgress({ current: 0, total: 0 });
-    try {
-      const text = await file.text();
-      
-      if (!file.name.toLowerCase().endsWith('.xml')) {
-         showToast("El archivo debe ser un .xml estándar de MyAnimeList/AniList.", "error");
-         setIsImporting(false);
-         return;
-      }
-
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(text, "text/xml");
-      const animeNodes = xmlDoc.getElementsByTagName("anime");
-      
-      const animesToProcess = [];
-      for (let i = 0; i < animeNodes.length; i++) {
-        const node = animeNodes[i];
-        
-        const getVal = (tag) => {
-          let val = node.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
-          return val.replace(/^<!\[CDATA\[(.*)\]\]>$/, '$1'); 
-        };
-
-        const malId = getVal("series_animedb_id");
-        const title = getVal("series_title") || 'Desconocido';
-        const progress = parseInt(getVal("my_watched_episodes")) || 0;
-        const totalEpisodes = parseInt(getVal("series_episodes")) || 0;
-        
-        const rawStatus = getVal("my_status").toLowerCase();
-        let status = 'Pendiente';
-        if (['1', 'watching', 'current'].includes(rawStatus)) status = 'Viendo';
-        else if (['2', 'completed'].includes(rawStatus)) status = 'Terminado';
-        else if (['3', 'on-hold', 'paused'].includes(rawStatus)) status = 'Pausado';
-        else if (['4', 'dropped'].includes(rawStatus)) status = 'Abandonado';
-        else if (['6', 'plan to watch', 'planning'].includes(rawStatus)) status = 'Pendiente';
-
-        let rating = parseFloat(getVal("my_score")) || 0;
-        if (rating > 10) rating = Math.round(rating / 10);
-
-        let coverUrl = getVal("series_image") || getVal("anime_image_path") || '';
-        
-        animesToProcess.push({ 
-          malId, title, progress, totalEpisodes, status, rating, 
-          coverUrl, duration: 24, watchUrl: '', genres: [] 
-        });
-      }
-
-      if (animesToProcess.length === 0) {
-         showToast("No se encontraron animes compatibles en el archivo.", "error");
-         setIsImporting(false);
-         return;
-      }
-
-      setImportProgress({ current: 0, total: animesToProcess.length });
-      const finalAnimes = [];
-
-      for (let i = 0; i < animesToProcess.length; i++) {
-         const anime = animesToProcess[i];
-         setImportProgress({ current: i + 1, total: animesToProcess.length });
-         
-         if (!anime.coverUrl && anime.malId) {
-           try {
-              const res = await fetch(`https://api.jikan.moe/v4/anime/${anime.malId}`);
-              if (res.ok) {
-                 const data = await res.json();
-                 anime.coverUrl = data.data?.images?.jpg?.large_image_url || '';
-                 anime.genres = data.data?.genres ? data.data.genres.map(g => g.name) : [];
-                 
-                 if (data.data?.duration) {
-                   const match = data.data.duration.match(/(\d+)\s*min/);
-                   if (match) anime.duration = parseInt(match[1], 10);
-                 }
-              }
-              await new Promise(r => setTimeout(r, 450)); 
-           } catch (err) {
-              console.error("Error descargando portada de", anime.title);
-           }
-         }
-         finalAnimes.push(anime);
-      }
-
-      if (user) {
-        const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
-        const savePromises = finalAnimes.map(anime => 
-          setDoc(doc(animesRef, Date.now().toString() + Math.random().toString(36).substring(2, 9)), anime)
-        );
-        await Promise.all(savePromises);
-        showToast(`¡Éxito! Importados ${finalAnimes.length} animes con portadas y estados sincronizados.`, "success");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("Error crítico al procesar XML.", "error");
-    } finally {
-      setIsImporting(false);
-      setImportProgress({ current: 0, total: 0 });
-      e.target.value = null; 
-    }
-  };
-
-  const exportToCSV = () => {
-    if (animes.length === 0) return;
-    const headers = ['Título', 'Estado', 'Progreso', 'Total Episodios', 'Calificación', 'Géneros', 'URL de Portada'];
-    const csvRows = [headers.join(',')];
-
-    animes.forEach(anime => {
-      const row = [
-        `"${(anime.title || '').replace(/"/g, '""')}"`, 
-        `"${anime.status || ''}"`,
-        anime.progress || 0,
-        anime.totalEpisodes || 0,
-        anime.rating || 0,
-        `"${(anime.genres || []).join(', ')}"`,
-        `"${anime.coverUrl || ''}"`
-      ];
-      csvRows.push(row.join(','));
-    });
-
-    const csvContent = "\uFEFF" + csvRows.join('\n'); 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'mi_lista_anime.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast("Archivo CSV descargado correctamente.", "success");
-  };
-
-  // --- LA RULETA GACHA CINEMÁTICA ---
-  const handleStartRoulette = async () => {
-    if (isSpinning) return;
-    setWinnerAnime(null);
-
-    let candidates = [];
-    if (rouletteMode === 'pendiente') {
-      candidates = animes.filter(a => a.status === 'Pendiente');
-      if (candidates.length === 0) {
-        showToast("No tienes animes pendientes. ¡Cambiando a modo Invocación Mundial!", "warning");
-        setRouletteMode('descubrir');
-        return;
-      }
-    }
-
-    setIsSpinning(true);
-    
-    if (rouletteMode === 'descubrir') {
-      try {
-        const page = Math.floor(Math.random() * 5) + 1;
-        const res = await fetch(`https://api.jikan.moe/v4/top/anime?page=${page}&limit=20`);
-        const data = await res.json();
-        candidates = data.data ? data.data.map(item => ({
-          title: item.title,
-          coverUrl: item.images?.jpg?.large_image_url,
-          genres: item.genres?.map(g => g.name) || [],
-          totalEpisodes: item.episodes || 12,
-          score: item.score || 0,
-          malId: String(item.mal_id)
-        })) : [];
-      } catch (e) {
-        showToast("Error de conexión con el oráculo de anime", "error");
-        setIsSpinning(false);
-        return;
-      }
-    }
-
-    if (candidates.length === 0) {
-      showToast("No se encontraron candidatos para el sorteo.", "error");
-      setIsSpinning(false);
-      return;
-    }
-
-    const arraySize = 50;
-    const generatedList = Array.from({ length: arraySize }, (_, idx) => {
-      const candidateIndex = idx % candidates.length;
-      return { ...candidates[candidateIndex], rouletteId: `${idx}-${Date.now()}` };
-    });
-
-    setRouletteList(generatedList);
-
-    const targetIndex = 40; // El elemento #40 será el ganador
-    const cardWidth = 144 + 12; // Ancho de carta w-36 (144px) + gap-3 (12px)
-    const targetOffset = (targetIndex * cardWidth) - (carouselRef.current?.offsetWidth / 2) + (cardWidth / 2);
-    
-    setSpinOffset(0);
-    setTimeout(() => {
-      setSpinOffset(targetOffset);
-    }, 100);
-
-    // Sonido síncrono que desacelera de forma realista
-    let currentTick = 0;
-    const playTickSequence = () => {
-      if (currentTick < targetIndex) {
-        playSound('tick');
-        currentTick++;
-        const delay = Math.pow(currentTick / (targetIndex * 0.95), 3) * 200 + 40; 
-        setTimeout(playTickSequence, delay);
-      }
-    };
-    playTickSequence();
-
-    setTimeout(() => {
-      setIsSpinning(false);
-      const winner = generatedList[targetIndex];
-      setWinnerAnime(winner);
-      playSound('success');
-      triggerQuestComplete('ruleta'); // Marcar como completada la misión de la ruleta
-    }, 5500);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-purple-500/30 pb-16 relative overflow-x-hidden">
+    <div className="min-h-screen bg-slate-955 text-slate-200 font-sans selection:bg-purple-500/30 pb-16 relative overflow-x-hidden">
       
       {/* CAPA DE DETALLES GRADIENTE FLOATING */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -952,34 +658,53 @@ export default function App() {
 
       {/* HEADER PRINCIPAL */}
       <header className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+          <div className="flex items-center justify-between gap-4">
             
-            <div className="flex items-center gap-3 w-full lg:w-auto justify-between">
-              <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setCurrentView('list'); setViewingSharedList(null); }}>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                  <Tv className="w-6 h-6 text-white" />
-                </div>
-                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-300">
-                  AniTracker
-                </h1>
+            {/* LADO IZQUIERDO: LOGO */}
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setCurrentView('list'); setViewingSharedList(null); }}>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                <Tv className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-
-              {/* Toggles Vista Móvil */}
-              <div className="flex overflow-x-auto hide-scrollbar bg-slate-900/50 p-1 rounded-xl lg:hidden max-w-[55vw]">
-                <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white shadow' : 'text-slate-400'}`}>Mi Lista</button>
-                <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400'}`}><Compass size={13}/>Descubrir</button>
-                <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'guild' ? 'bg-yellow-600 text-slate-950 shadow' : 'text-slate-400'}`}><Gamepad2 size={13}/>Gremio</button>
-                <button onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}><Calendar size={13}/>Estrenos</button>
-                <button onClick={() => { setCurrentView('community'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'community' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><Users size={13}/>Social</button>
-                <button onClick={() => { setCurrentView('stats'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400'}`}><BarChart3 size={13}/>Stats</button>
-              </div>
+              <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-300">
+                AniTracker
+              </h1>
             </div>
 
-            <div className="flex flex-wrap md:flex-nowrap w-full lg:w-auto items-center justify-end gap-3">
-              
-              {/* Toggles Vista Escritorio */}
-              <div className="hidden lg:flex bg-slate-900/60 p-1 rounded-xl mr-2 border border-slate-900">
+            {/* --- ACCIONES PARA CELULARES (Lupa, Agregar y Menú Desplegable) --- */}
+            <div className="flex items-center gap-2 lg:hidden">
+              {currentView === 'list' && !viewingSharedList && (
+                <button 
+                  onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
+                  className={`p-2 rounded-xl border transition-all ${isMobileSearchOpen ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'}`}
+                  title="Buscar"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+              )}
+
+              {currentView === 'list' && !viewingSharedList && (
+                <button 
+                  onClick={() => handleOpenModal()} 
+                  className="p-2 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-600/20"
+                  title="Añadir Anime"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+
+              <button 
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="p-2 bg-slate-900 border border-slate-800 text-slate-200 rounded-xl"
+                title="Menú"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* --- ACCIONES PARA ESCRITORIO --- */}
+            <div className="hidden lg:flex items-center gap-3">
+              <div className="bg-slate-900/60 p-1 rounded-xl mr-2 border border-slate-900 flex">
                 <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>Mi Lista</button>
                 <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={15}/>Catálogo</button>
                 <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'guild' ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Gamepad2 size={15}/>Gremio & Ruleta</button>
@@ -988,11 +713,10 @@ export default function App() {
                 <button onClick={() => { setCurrentView('stats'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={15}/>Estadísticas</button>
               </div>
 
-              {/* Autenticación */}
               {user && !user.isAnonymous ? (
                 <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full shadow-lg">
                   <img src={user.photoURL || 'https://via.placeholder.com/32'} alt="Perfil" className="w-7 h-7 rounded-full border border-purple-500/50" />
-                  <span className="text-sm font-semibold text-slate-200 hidden lg:block max-w-[120px] truncate">
+                  <span className="text-sm font-semibold text-slate-200 max-w-[120px] truncate">
                     {user.displayName || 'Usuario'}
                   </span>
                   <button onClick={handleLogout} title="Cerrar sesión" className="text-slate-400 hover:text-red-400 transition-colors ml-1">
@@ -1007,21 +731,20 @@ export default function App() {
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                   </svg>
-                  <span className="hidden sm:inline">Google Login</span>
+                  <span>Google Login</span>
                 </button>
               )}
 
               {currentView === 'list' && !viewingSharedList && (
                 <>
-                  <div className="relative w-full sm:w-auto flex-1 sm:flex-none">
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input 
                       type="text" placeholder="Filtrar..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full sm:w-40 bg-slate-900/60 border border-slate-800 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 transition-all"
+                      className="w-40 bg-slate-900/60 border border-slate-800 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 transition-all"
                     />
                   </div>
                   
-                  {/* Toggles de Vista Grid/Lista */}
                   <div className="flex shrink-0 bg-slate-900 border border-slate-800 rounded-full p-1">
                     <button onClick={() => setListLayout('grid')} className={`p-1.5 rounded-full transition-all ${listLayout === 'grid' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>
                       <LayoutGrid className="w-4 h-4" />
@@ -1031,38 +754,55 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Acciones de Lista */}
                   <input type="file" accept=".xml" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                  <button onClick={() => fileInputRef.current?.click()} disabled={isImporting || !user} title="Importar XML" className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-800 shadow-md">
+                  <button onClick={() => fileInputRef.current?.click()} disabled={isImporting || !user} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-800 shadow-md">
                     {isImporting ? <Loader2 className="w-4 h-4 animate-spin text-purple-500" /> : <Upload className="w-4 h-4" />}
-                    <span className="hidden sm:inline">
-                      {isImporting && importProgress.total > 0 
-                        ? `Leyendo... ${importProgress.current}/${importProgress.total}` 
-                        : (isImporting ? 'Cargando...' : 'Importar')}
-                    </span>
+                    <span>{isImporting ? 'Importando...' : 'Importar'}</span>
                   </button>
 
-                  <button onClick={exportToCSV} disabled={animes.length === 0} title="Exportar CSV" className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-800 shadow-md">
+                  <button onClick={exportToCSV} disabled={animes.length === 0} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-800 shadow-md">
                     <Download className="w-4 h-4" />
-                    <span className="hidden sm:inline">Exportar</span>
+                    <span>Exportar</span>
                   </button>
 
                   <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-sm font-bold transition-all shadow-lg shadow-purple-600/20">
                     <Plus className="w-4 h-4" />
-                    <span className="hidden sm:inline">Añadir</span>
+                    <span>Añadir</span>
                   </button>
                 </>
               )}
             </div>
           </div>
 
+          {/* --- BUSCADOR EXPANDIBLE SÓLO EN MÓVIL (Al presionar la Lupa) --- */}
+          {currentView === 'list' && !viewingSharedList && isMobileSearchOpen && (
+            <div className="mt-3.5 lg:hidden flex gap-2 animate-in slide-in-from-top-3 duration-200">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" placeholder="Buscar en mi lista..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 text-slate-200"
+                />
+              </div>
+              <div className="flex bg-slate-900 border border-slate-850 rounded-xl p-0.5">
+                <button onClick={() => setListLayout('grid')} className={`p-1.5 rounded-lg ${listLayout === 'grid' ? 'bg-slate-700 text-white' : 'text-slate-500'}`}>
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+                <button onClick={() => setListLayout('list')} className={`p-1.5 rounded-lg ${listLayout === 'list' ? 'bg-slate-700 text-white' : 'text-slate-500'}`}>
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Filtro de Categoría (Horizontal) */}
           {currentView === 'list' && !viewingSharedList && (
-            <div className="flex overflow-x-auto hide-scrollbar gap-2 mt-6 pb-2">
+            <div className="flex overflow-x-auto hide-scrollbar gap-2 mt-4 pb-1">
               {['Todos', ...Object.keys(STATUS_CONFIG)].map(status => (
                 <button
                   key={status} onClick={() => setActiveFilter(status)}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
-                    activeFilter === status ? 'bg-slate-800 text-white shadow-md border border-slate-700/50' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                  className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
+                    activeFilter === status ? 'bg-slate-850 text-white shadow-md border border-slate-700/50' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
                   }`}
                 >
                   {status}
@@ -1072,6 +812,164 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* --- MENÚ LATERAL DESPLEGABLE MÓVIL (DRAWER) --- */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Fondo oscuro traslúcido */}
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+          
+          <div className="absolute top-0 right-0 h-full w-4/5 max-w-sm bg-slate-900 border-l border-slate-800 p-6 flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300">
+            <div>
+              {/* Header Menú */}
+              <div className="flex items-center justify-between pb-6 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center">
+                    <Tv className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="font-black text-lg text-white">AniTracker</span>
+                </div>
+                <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Sección de Usuario / Autenticación */}
+              <div className="py-6 border-b border-slate-800">
+                {user && !user.isAnonymous ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <img src={user.photoURL || 'https://via.placeholder.com/40'} alt="Perfil" className="w-10 h-10 rounded-full border border-purple-500" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-white truncate text-sm">{user.displayName || 'Usuario'}</p>
+                        <p className="text-[10px] text-yellow-500 font-bold uppercase tracking-wider">{stats.rankTitle} • Nivel {stats.level}</p>
+                      </div>
+                    </div>
+
+                    {/* Mapeo de Switch Público aquí para desatascar las vistas */}
+                    <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-850">
+                      <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                        <Share2 size={12} className="text-purple-400"/> Compartir Lista
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer scale-90">
+                        <input 
+                          type="checkbox" checked={isPublic} onChange={(e) => handleTogglePrivacy(e.target.checked)} 
+                          className="sr-only peer" 
+                        />
+                        <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      </label>
+                    </div>
+
+                    {isPublic && (
+                      <button 
+                        onClick={() => { handleShareLink(user.uid); setIsMobileMenuOpen(false); }}
+                        className="w-full text-center bg-slate-800 text-xs text-purple-400 font-bold py-2 rounded-lg border border-purple-500/20"
+                      >
+                        Copiar mi Enlace Otaku
+                      </button>
+                    )}
+
+                    <button 
+                      onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+                      className="w-full text-center bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold py-2 rounded-lg"
+                    >
+                      Cerrar Sesión
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-400 leading-normal">Inicia sesión para sincronizar tu lista en la nube y acceder a misiones del Gremio.</p>
+                    <button 
+                      onClick={() => { handleGoogleLogin(); setIsMobileMenuOpen(false); }}
+                      className="w-full flex items-center justify-center gap-2 bg-white text-slate-900 py-2.5 rounded-xl text-xs font-extrabold shadow-md"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                      Iniciar con Google
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Enlaces de Navegación Verticales */}
+              <nav className="py-6 space-y-2">
+                <button 
+                  onClick={() => { setCurrentView('list'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Tv size={16}/> Mi Lista de Anime
+                </button>
+                <button 
+                  onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'catalog' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Compass size={16}/> Catálogo Mundial
+                </button>
+                <button 
+                  onClick={() => { setCurrentView('guild'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'guild' ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Gamepad2 size={16}/> Gremio & Ruleta
+                </button>
+                <button 
+                  onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Calendar size={16}/> Calendario Estrenos
+                </button>
+                <button 
+                  onClick={() => { setCurrentView('community'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'community' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Users size={16}/> Comunidad Social
+                </button>
+                <button 
+                  onClick={() => { setCurrentView('stats'); setViewingSharedList(null); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    currentView === 'stats' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <BarChart3 size={16}/> Estadísticas Otaku
+                </button>
+              </nav>
+            </div>
+
+            {/* Acciones de Base de datos en el Pie del menú */}
+            {currentView === 'list' && !viewingSharedList && (
+              <div className="pt-4 border-t border-slate-800 space-y-2">
+                <button 
+                  onClick={() => { fileInputRef.current?.click(); setIsMobileMenuOpen(false); }}
+                  disabled={isImporting || !user}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 py-2.5 rounded-xl text-xs font-bold border border-slate-700"
+                >
+                  <Upload size={14}/> Importar XML (MAL/AniList)
+                </button>
+                <button 
+                  onClick={() => { exportToCSV(); setIsMobileMenuOpen(false); }}
+                  disabled={animes.length === 0}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 py-2.5 rounded-xl text-xs font-bold border border-slate-700"
+                >
+                  <Download size={14}/> Exportar CSV
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* --- VISTA: GREMIO DE AVENTUREROS & RULETA GACHA --- */}
       {currentView === 'guild' && (
@@ -1243,7 +1141,7 @@ export default function App() {
                       className="w-full h-full object-cover opacity-80" 
                       onError={(e) => e.target.src='https://via.placeholder.com/150x200'}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-955/20 to-transparent" />
                     <div className="absolute bottom-2 left-2 right-2">
                       <p className="text-[10px] font-black text-white line-clamp-2 drop-shadow-md">{item.title}</p>
                     </div>
@@ -1322,7 +1220,7 @@ export default function App() {
         </main>
       )}
 
-      {/* --- VISTA: COMUNIDAD / SOCIAL (NUEVA) --- */}
+      {/* --- VISTA: COMUNIDAD / SOCIAL --- */}
       {currentView === 'community' && (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 bg-slate-900/50 p-6 rounded-3xl border border-slate-800">
@@ -1382,19 +1280,19 @@ export default function App() {
                       <img src={profile.photoURL || 'https://via.placeholder.com/40'} alt={profile.username} className="w-10 h-10 rounded-full border border-slate-700" />
                       <div>
                         <h3 className="font-bold text-white text-base leading-tight">{profile.username}</h3>
-                        <p className="text-[10px] text-slate-500">Compartido {new Date(profile.updatedAt).toLocaleDateString()}</p>
+                        <p className="text-[10px] text-slate-500">Compartido {safeFormatDate(profile.updatedAt)}</p>
                       </div>
                       <span className="ml-auto bg-blue-500/10 text-blue-400 text-xs font-bold px-2.5 py-1 rounded-full border border-blue-500/20">
                         {profile.animes?.length || 0} Series
                       </span>
                     </div>
 
-                    {/* Vista de miniaturas */}
+                    {/* Vista de miniaturas segura contra listas vacías */}
                     <div className="grid grid-cols-4 gap-2 mb-4">
-                      {profile.animes?.slice(0, 4).map((anime, i) => (
+                      {(profile.animes || []).slice(0, 4).map((anime, i) => (
                         <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden bg-slate-950 relative group">
-                          <img src={anime.coverUrl} className="w-full h-full object-cover" onError={(e)=>e.target.src='https://via.placeholder.com/100'} />
-                          {anime.rating > 0 && (
+                          <img src={anime?.coverUrl || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" onError={(e)=>e.target.src='https://via.placeholder.com/100'} />
+                          {anime?.rating > 0 && (
                             <div className="absolute top-1 left-1 bg-slate-900/95 px-1 py-0.5 rounded text-[8px] text-yellow-500 flex items-center gap-0.5">
                               ★{anime.rating}
                             </div>
@@ -1566,8 +1464,8 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-gradient-to-br from-indigo-950/50 to-slate-900 border border-indigo-500/20 p-6 rounded-3xl relative overflow-hidden">
-              <ClockIcon className="absolute -right-4 -bottom-4 w-32 h-32 text-indigo-500/5" />
+            <div className="bg-gradient-to-br from-indigo-955/50 to-slate-900 border border-indigo-500/20 p-6 rounded-3xl relative overflow-hidden">
+              <Clock className="absolute -right-4 -bottom-4 w-32 h-32 text-indigo-500/5" />
               <div className="relative z-10">
                 <p className="text-indigo-400 font-bold mb-1 text-sm uppercase tracking-wider">Tiempo Invertido</p>
                 <div className="flex items-end gap-2 text-white">
@@ -1579,7 +1477,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-950/50 to-slate-900 border border-purple-500/20 p-6 rounded-3xl relative overflow-hidden">
+            <div className="bg-gradient-to-br from-purple-955/50 to-slate-900 border border-purple-500/20 p-6 rounded-3xl relative overflow-hidden">
               <Tv className="absolute -right-4 -bottom-4 w-32 h-32 text-purple-500/5" />
               <div className="relative z-10">
                 <p className="text-purple-400 font-bold mb-1 text-sm uppercase tracking-wider">Episodios Vistos</p>
@@ -1590,7 +1488,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-950/50 to-slate-900 border border-green-500/20 p-6 rounded-3xl relative overflow-hidden">
+            <div className="bg-gradient-to-br from-green-955/50 to-slate-900 border border-green-500/20 p-6 rounded-3xl relative overflow-hidden">
               <CheckCircle2 className="absolute -right-4 -bottom-4 w-32 h-32 text-green-500/5" />
               <div className="relative z-10">
                 <p className="text-green-400 font-bold mb-1 text-sm uppercase tracking-wider">Animes Terminados</p>
@@ -1690,7 +1588,7 @@ export default function App() {
               <Loader2 className="w-12 h-12 mb-4 animate-spin text-purple-500" />
               <p className="font-medium">Sincronizando con la nube...</p>
             </div>
-          ) : (viewingSharedList ? viewingSharedList.animes : filteredAnimes).length === 0 ? (
+          ) : (viewingSharedList ? viewingSharedList.animes : filteredAnimes).filter(Boolean).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-500">
               <Tv className="w-16 h-16 mb-4 opacity-20" />
               <p className="text-lg">No hay animes de momento.</p>
@@ -1701,8 +1599,8 @@ export default function App() {
               )}
             </div>
           ) : (
-            <div className={listLayout === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6" : "flex flex-col gap-3 sm:gap-4"}>
-              {(viewingSharedList ? viewingSharedList.animes : filteredAnimes).map(anime => {
+            <div className={listLayout === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-6" : "flex flex-col gap-3 sm:gap-4"}>
+              {(viewingSharedList ? viewingSharedList.animes : filteredAnimes).filter(Boolean).map(anime => {
                 const statusConf = STATUS_CONFIG[anime.status] || STATUS_CONFIG['Viendo'];
                 const StatusIcon = statusConf.icon;
                 const progressPercent = anime.totalEpisodes ? Math.min(100, Math.round((anime.progress / anime.totalEpisodes) * 100)) : 0;
@@ -1714,37 +1612,37 @@ export default function App() {
                       onClick={() => handleOpenDetails(anime)}
                       className="group relative bg-[#0f172a]/70 rounded-xl sm:rounded-2xl overflow-hidden border border-slate-900 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10 cursor-pointer"
                     >
-                      <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-850">
+                      <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-855">
                         {anime.coverUrl ? (
                           <img src={anime.coverUrl} alt={anime.title} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8 sm:w-12 sm:h-12" /></div>
                         )}
                         
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent opacity-90" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-955/10 to-transparent opacity-90" />
                         
                         {/* Acciones Rápidas Superior */}
-                        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex flex-col sm:flex-row gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e)=>e.stopPropagation()}>
+                        <div className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3 flex gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e)=>e.stopPropagation()}>
                           {viewingSharedList ? (
-                            <button onClick={() => handleCloneAnime(anime)} title="Clonar a mi Lista" className="p-1.5 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-blue-600 text-white transition-colors"><ArrowUpRight className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleCloneAnime(anime)} title="Clonar a mi Lista" className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-blue-600 text-white transition-colors"><ArrowUpRight className="w-3.5 h-3.5" /></button>
                           ) : (
                             <>
-                              <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
-                              <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleOpenModal(anime)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleDelete(anime.id)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
                             </>
                           )}
                         </div>
 
                         {/* Tag de Estado */}
-                        <div className="absolute top-2 left-2 sm:top-3 sm:left-3">
-                          <div className={`flex items-center gap-1 sm:gap-1.5 px-1.5 py-1 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-xs font-bold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
-                            <StatusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> 
+                        <div className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3">
+                          <div className={`flex items-center gap-1 sm:gap-1.5 px-1 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[8px] sm:text-xs font-bold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
+                            <StatusIcon className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5" /> 
                             <span className="hidden sm:inline">{anime.status}</span>
                           </div>
                         </div>
 
                         {/* Detalle y Barra Progreso Inferior */}
-                        <div className="absolute bottom-0 left-0 w-full p-2.5 sm:p-4">
+                        <div className="absolute bottom-0 left-0 w-full p-2 sm:p-4">
                           <h3 className="text-[10px] sm:text-base font-bold text-white line-clamp-2 leading-tight mb-1 sm:mb-2 drop-shadow-md">{anime.title}</h3>
                           
                           <div className="space-y-1 sm:space-y-1.5">
@@ -1762,18 +1660,18 @@ export default function App() {
 
                       {/* --- INCREMENTADOR EXPRÉS DIRECTO EN EL FOOTER --- */}
                       {!viewingSharedList && (
-                        <div className="bg-slate-900 p-2 border-t border-slate-800 flex items-center justify-between" onClick={(e)=>e.stopPropagation()}>
+                        <div className="bg-slate-900 p-1 sm:p-2 border-t border-slate-800 flex items-center justify-between" onClick={(e)=>e.stopPropagation()}>
                           <button 
                             disabled={anime.progress === 0}
                             onClick={(e) => handleQuickProgress(e, anime, -1)}
-                            className="text-[10px] font-bold px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md transition-all disabled:opacity-40"
+                            className="text-[9px] sm:text-[10px] font-bold px-2 py-0.5 sm:py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md transition-all disabled:opacity-40"
                           >
                             -1
                           </button>
-                          <span className="text-[10px] text-slate-500 font-mono">Progreso</span>
+                          <span className="text-[8px] sm:text-[10px] text-slate-500 font-mono hidden sm:inline">Progreso</span>
                           <button 
                             onClick={(e) => handleQuickProgress(e, anime, 1)}
-                            className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all"
+                            className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white text-[9px] sm:text-[10px] font-bold px-2 py-0.5 sm:py-1 rounded-md transition-all"
                           >
                             +1 EP
                           </button>
@@ -1790,7 +1688,7 @@ export default function App() {
                     onClick={() => handleOpenDetails(anime)}
                     className="group flex flex-row bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer"
                   >
-                    <div className="relative w-20 sm:w-28 shrink-0 bg-slate-850">
+                    <div className="relative w-20 sm:w-28 shrink-0 bg-slate-855">
                       {anime.coverUrl ? (
                         <img src={anime.coverUrl} alt={anime.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />
                       ) : (
@@ -1818,8 +1716,8 @@ export default function App() {
                             <button onClick={() => handleCloneAnime(anime)} className="p-2 bg-slate-800 hover:bg-blue-600 text-white rounded-xl transition-all" title="Clonar"><ArrowUpRight size={14} /></button>
                           ) : (
                             <>
-                              <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-850 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                              <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-850 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-855 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-855 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                               
                               {/* Incrementadores horizontales */}
                               <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-850 ml-1">
@@ -1837,7 +1735,7 @@ export default function App() {
                           <span>Episodios: {anime.progress} / {anime.totalEpisodes || '?'}</span>
                           <span>{progressPercent}%</span>
                         </div>
-                        <div className="h-1.5 sm:h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-850">
+                        <div className="h-1.5 sm:h-2 w-full bg-slate-955 rounded-full overflow-hidden border border-slate-850">
                           <div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} />
                         </div>
                       </div>
@@ -1974,7 +1872,7 @@ export default function App() {
             <h2 className="text-2xl font-black text-yellow-400 mb-1 flex items-center justify-center gap-1.5"><Sparkles size={22}/> ¡Felicidades! <Sparkles size={22}/></h2>
             <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-4">Completaste un Anime</p>
             
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 mb-6 flex flex-col items-center">
+            <div className="bg-slate-955 p-4 rounded-2xl border border-slate-850 mb-6 flex flex-col items-center">
               <img src={celebrationAnime.coverUrl} className="w-24 h-36 object-cover rounded-xl border border-slate-800 shadow-xl mb-3" />
               <h3 className="font-bold text-white text-base leading-snug">{celebrationAnime.title}</h3>
               <p className="text-xs text-slate-400 mt-1">Acabas de terminar de ver los {celebrationAnime.totalEpisodes} episodios.</p>
@@ -1982,7 +1880,7 @@ export default function App() {
 
             <button 
               onClick={() => setCelebrationAnime(null)}
-              className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black py-3 rounded-xl text-sm transition-all"
+              className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-955 font-black py-3 rounded-xl text-sm transition-all"
             >
               ¡Seguir Maratoneando!
             </button>
@@ -1993,7 +1891,7 @@ export default function App() {
       {/* --- MODAL PARA AÑADIR/EDITAR (Mantiene toda tu lógica) --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={handleCloseModal} />
+          <div className="absolute inset-0 bg-slate-955/80 backdrop-blur-sm" onClick={handleCloseModal} />
           
           <div className="relative w-full max-w-xl bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
