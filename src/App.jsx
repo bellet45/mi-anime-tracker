@@ -5,7 +5,8 @@ import {
   Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
   Clock as ClockIcon, Target, Flame, Medal, Download, Compass,
   LayoutGrid, List, Calendar, Upload, Share2, Users, ArrowUpRight,
-  Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart
+  Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart,
+  Gamepad2, Dices, Award, Zap
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -34,11 +35,54 @@ const STATUS_CONFIG = {
   'Abandonado': { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-400/20' }
 };
 
+// Generador de audio limpio retro en tiempo real utilizando la Web Audio API del navegador
+const playSound = (type) => {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    if (type === 'tick') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.05);
+    } else if (type === 'success') {
+      const now = audioCtx.currentTime;
+      osc.type = 'triangle';
+      gainNode.gain.setValueAtTime(0.12, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      const notes = [261.63, 329.63, 392.00, 523.25]; // Arpegio Mayor de arcade
+      notes.forEach((freq, idx) => {
+        osc.frequency.setValueAtTime(freq, now + (idx * 0.08));
+      });
+      osc.start();
+      osc.stop(now + 0.4);
+    } else if (type === 'quest_complete') {
+      const now = audioCtx.currentTime;
+      osc.type = 'sine';
+      gainNode.gain.setValueAtTime(0.15, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.setValueAtTime(880, now + 0.1);
+      osc.start();
+      osc.stop(now + 0.3);
+    }
+  } catch (e) {
+    console.warn("La Web Audio API no se pudo activar debido a restricciones de interacción del navegador.");
+  }
+};
+
 export default function App() {
   const [animes, setAnimes] = useState([]);
   const [activeFilter, setActiveFilter] = useState('Todos');
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentView, setCurrentView] = useState('list'); // 'list', 'stats', 'catalog', 'calendar', 'community'
+  const [currentView, setCurrentView] = useState('list'); // 'list', 'stats', 'catalog', 'calendar', 'community', 'guild'
   const [listLayout, setListLayout] = useState('grid'); // 'grid' o 'list'
   
   const [user, setUser] = useState(null);
@@ -86,6 +130,23 @@ export default function App() {
   // Celebraciones
   const [celebrationAnime, setCelebrationAnime] = useState(null);
 
+  // --- NUEVOS ESTADOS DE GAMIFICACIÓN Y RULETA ---
+  const [quests, setQuests] = useState([
+    { id: 'maraton', text: 'Maratón Diario: Avanza +1 episodio en tu lista', points: 50, done: false },
+    { id: 'ruleta', text: 'El Oráculo: Haz girar la Ruleta del Destino hoy', points: 50, done: false },
+    { id: 'explorar', text: 'Explorador: Busca un anime en el Catálogo Global', points: 50, done: false }
+  ]);
+  const [claimedQuests, setClaimedQuests] = useState([]); // Quests ya reclamadas hoy
+  const [bonusXp, setBonusXp] = useState(0); // XP extra obtenida de misiones
+
+  // Estados de la Ruleta
+  const [rouletteMode, setRouletteMode] = useState('pendiente'); // 'pendiente' o 'descubrir'
+  const [rouletteList, setRouletteList] = useState([]);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [spinOffset, setSpinOffset] = useState(0);
+  const [winnerAnime, setWinnerAnime] = useState(null);
+  const carouselRef = useRef(null);
+
   // --- NOTIFICACIONES TOAST (Reemplaza alert()) ---
   const showToast = (message, type = 'success') => {
     const id = Date.now() + Math.random().toString(36).substring(2, 5);
@@ -93,6 +154,53 @@ export default function App() {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
+  };
+
+  // Inicializar Quests desde LocalStorage en base a la fecha de hoy
+  useEffect(() => {
+    const storedDate = localStorage.getItem('otaku_quest_date');
+    const todayStr = new Date().toDateString();
+    
+    if (storedDate !== todayStr) {
+      localStorage.setItem('otaku_quest_date', todayStr);
+      localStorage.setItem('otaku_quests', JSON.stringify([
+        { id: 'maraton', text: 'Maratón Diario: Avanza +1 episodio en tu lista', points: 50, done: false },
+        { id: 'ruleta', text: 'El Oráculo: Haz girar la Ruleta del Destino hoy', points: 50, done: false },
+        { id: 'explorar', text: 'Explorador: Busca un anime en el Catálogo Global', points: 50, done: false }
+      ]));
+      localStorage.setItem('otaku_claimed_quests', JSON.stringify([]));
+      localStorage.setItem('otaku_bonus_xp', '0');
+    } else {
+      const savedQuests = localStorage.getItem('otaku_quests');
+      const savedClaimed = localStorage.getItem('otaku_claimed_quests');
+      const savedBonusXp = localStorage.getItem('otaku_bonus_xp');
+      
+      if (savedQuests) setQuests(JSON.parse(savedQuests));
+      if (savedClaimed) setClaimedQuests(JSON.parse(savedClaimed));
+      if (savedBonusXp) setBonusXp(parseInt(savedBonusXp, 10) || 0);
+    }
+  }, []);
+
+  const triggerQuestComplete = (questId) => {
+    setQuests(prev => {
+      const updated = prev.map(q => q.id === questId ? { ...q, done: true } : q);
+      localStorage.setItem('otaku_quests', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const claimQuestXp = (questId, xpPoints) => {
+    if (claimedQuests.includes(questId)) return;
+    const nextClaimed = [...claimedQuests, questId];
+    setClaimedQuests(nextClaimed);
+    localStorage.setItem('otaku_claimed_quests', JSON.stringify(nextClaimed));
+    
+    const nextBonusXp = bonusXp + xpPoints;
+    setBonusXp(nextBonusXp);
+    localStorage.setItem('otaku_bonus_xp', String(nextBonusXp));
+    
+    playSound('quest_complete');
+    showToast(`¡Reclamaste +${xpPoints} XP del Gremio!`, 'success');
   };
 
   // --- AUTENTICACIÓN ---
@@ -279,6 +387,7 @@ export default function App() {
         let url = 'https://api.jikan.moe/v4/top/anime?limit=24'; 
         if (catalogSearch.trim().length > 2) {
           url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(catalogSearch)}&limit=24`;
+          triggerQuestComplete('explorar'); // Desbloquear misión diaria al buscar en el catálogo
         }
         const res = await fetch(url);
         const data = await res.json();
@@ -424,12 +533,16 @@ export default function App() {
       const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
       await setDoc(doc(animesRef, anime.id), updatedAnime);
       showToast(`Progreso actualizado a ${nextProgress} EPS`, "success");
+      
+      if (increment > 0) {
+        triggerQuestComplete('maraton'); // Marcar completado misiones diarias
+      }
     } catch (error) {
       showToast("Error al actualizar progreso.", "error");
     }
   };
 
-  // --- CÁLCULO DE ESTADÍSTICAS ---
+  // --- CÁLCULO DE ESTADÍSTICAS & GAMIFICACIÓN ---
   const stats = useMemo(() => {
     let totalEps = 0;
     let totalMinutes = 0;
@@ -467,8 +580,31 @@ export default function App() {
       { id: 6, title: 'Hikikomori', desc: 'Acumula 5 días de visualización', unlocked: days >= 5, icon: Medal },
     ];
 
-    return { totalEps, days, hours, topGenres: sortedGenres, maxGenreCount, achievements, completedCount };
-  }, [animes]);
+    // Cálculos de niveles basados en XP
+    const unlockedAchievementsCount = achievements.filter(a => a.unlocked).length;
+    const baseProgressXp = (totalEps * 15) + (completedCount * 150) + (unlockedAchievementsCount * 200);
+    const totalXp = baseProgressXp + bonusXp;
+
+    const computedLevel = Math.floor(Math.sqrt(totalXp) / 8) + 1;
+    const xpForCurrentLevel = Math.pow((computedLevel - 1) * 8, 2);
+    const xpForNextLevel = Math.pow(computedLevel * 8, 2);
+    const progressInCurrentLevel = totalXp - xpForCurrentLevel;
+    const levelRange = xpForNextLevel - xpForCurrentLevel;
+    const levelProgressPercent = Math.min(100, Math.round((progressInCurrentLevel / levelRange) * 100)) || 0;
+
+    let rankTitle = 'Estudiante de la Academia';
+    if (computedLevel >= 40) rankTitle = 'Monarca de las Sombras';
+    else if (computedLevel >= 30) rankTitle = 'Sannin Legendario';
+    else if (computedLevel >= 20) rankTitle = 'Rey de los Piratas';
+    else if (computedLevel >= 15) rankTitle = 'Pilar de la Niebla (Hashira)';
+    else if (computedLevel >= 10) rankTitle = 'Cazador de Rango S';
+    else if (computedLevel >= 5) rankTitle = 'Genin Elite';
+
+    return { 
+      totalEps, days, hours, topGenres: sortedGenres, maxGenreCount, achievements, completedCount,
+      totalXp, level: computedLevel, levelProgressPercent, xpForNextLevel, progressInCurrentLevel, levelRange, rankTitle
+    };
+  }, [animes, bonusXp]);
 
   // --- FILTRADO DE ANIME ---
   const filteredAnimes = animes.filter(anime => {
@@ -532,8 +668,13 @@ export default function App() {
   // --- COPIADO SEGURO AL PORTAPAPELES (Iframe friendly) ---
   const handleShareLink = (friendId) => {
     const profileLink = `${window.location.origin}/?friend=${friendId}`;
+    const textToCopy = profileLink;
+    
+    // Método alternativo robusto para iframes
     const textArea = document.createElement("textarea");
-    textArea.value = profileLink;
+    textArea.value = textToCopy;
+    textArea.style.position = "absolute";
+    textArea.style.opacity = "0";
     document.body.appendChild(textArea);
     textArea.select();
     try {
@@ -651,7 +792,7 @@ export default function App() {
                    if (match) anime.duration = parseInt(match[1], 10);
                  }
               }
-              await new Promise(r => setTimeout(r, 450)); // Retraso para evitar rate-limits de Jikan
+              await new Promise(r => setTimeout(r, 450)); 
            } catch (err) {
               console.error("Error descargando portada de", anime.title);
            }
@@ -708,6 +849,87 @@ export default function App() {
     showToast("Archivo CSV descargado correctamente.", "success");
   };
 
+  // --- LA RULETA GACHA CINEMÁTICA ---
+  const handleStartRoulette = async () => {
+    if (isSpinning) return;
+    setWinnerAnime(null);
+
+    let candidates = [];
+    if (rouletteMode === 'pendiente') {
+      candidates = animes.filter(a => a.status === 'Pendiente');
+      if (candidates.length === 0) {
+        showToast("No tienes animes pendientes. ¡Cambiando a modo Invocación Mundial!", "warning");
+        setRouletteMode('descubrir');
+        return;
+      }
+    }
+
+    setIsSpinning(true);
+    
+    if (rouletteMode === 'descubrir') {
+      try {
+        const page = Math.floor(Math.random() * 5) + 1;
+        const res = await fetch(`https://api.jikan.moe/v4/top/anime?page=${page}&limit=20`);
+        const data = await res.json();
+        candidates = data.data ? data.data.map(item => ({
+          title: item.title,
+          coverUrl: item.images?.jpg?.large_image_url,
+          genres: item.genres?.map(g => g.name) || [],
+          totalEpisodes: item.episodes || 12,
+          score: item.score || 0,
+          malId: String(item.mal_id)
+        })) : [];
+      } catch (e) {
+        showToast("Error de conexión con el oráculo de anime", "error");
+        setIsSpinning(false);
+        return;
+      }
+    }
+
+    if (candidates.length === 0) {
+      showToast("No se encontraron candidatos para el sorteo.", "error");
+      setIsSpinning(false);
+      return;
+    }
+
+    const arraySize = 50;
+    const generatedList = Array.from({ length: arraySize }, (_, idx) => {
+      const candidateIndex = idx % candidates.length;
+      return { ...candidates[candidateIndex], rouletteId: `${idx}-${Date.now()}` };
+    });
+
+    setRouletteList(generatedList);
+
+    const targetIndex = 40; // El elemento #40 será el ganador
+    const cardWidth = 144 + 12; // Ancho de carta w-36 (144px) + gap-3 (12px)
+    const targetOffset = (targetIndex * cardWidth) - (carouselRef.current?.offsetWidth / 2) + (cardWidth / 2);
+    
+    setSpinOffset(0);
+    setTimeout(() => {
+      setSpinOffset(targetOffset);
+    }, 100);
+
+    // Sonido síncrono que desacelera de forma realista
+    let currentTick = 0;
+    const playTickSequence = () => {
+      if (currentTick < targetIndex) {
+        playSound('tick');
+        currentTick++;
+        const delay = Math.pow(currentTick / (targetIndex * 0.95), 3) * 200 + 40; 
+        setTimeout(playTickSequence, delay);
+      }
+    };
+    playTickSequence();
+
+    setTimeout(() => {
+      setIsSpinning(false);
+      const winner = generatedList[targetIndex];
+      setWinnerAnime(winner);
+      playSound('success');
+      triggerQuestComplete('ruleta'); // Marcar como completada la misión de la ruleta
+    }, 5500);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-purple-500/30 pb-16 relative overflow-x-hidden">
       
@@ -747,6 +969,7 @@ export default function App() {
               <div className="flex overflow-x-auto hide-scrollbar bg-slate-900/50 p-1 rounded-xl lg:hidden max-w-[55vw]">
                 <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white shadow' : 'text-slate-400'}`}>Mi Lista</button>
                 <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400'}`}><Compass size={13}/>Descubrir</button>
+                <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'guild' ? 'bg-yellow-600 text-slate-950 shadow' : 'text-slate-400'}`}><Gamepad2 size={13}/>Gremio</button>
                 <button onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}><Calendar size={13}/>Estrenos</button>
                 <button onClick={() => { setCurrentView('community'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'community' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}><Users size={13}/>Social</button>
                 <button onClick={() => { setCurrentView('stats'); setViewingSharedList(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400'}`}><BarChart3 size={13}/>Stats</button>
@@ -759,6 +982,7 @@ export default function App() {
               <div className="hidden lg:flex bg-slate-900/60 p-1 rounded-xl mr-2 border border-slate-900">
                 <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>Mi Lista</button>
                 <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={15}/>Catálogo</button>
+                <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'guild' ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Gamepad2 size={15}/>Gremio & Ruleta</button>
                 <button onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Calendar size={15}/>Calendario</button>
                 <button onClick={() => { setCurrentView('community'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'community' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Users size={15}/>Comunidad</button>
                 <button onClick={() => { setCurrentView('stats'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={15}/>Estadísticas</button>
@@ -848,6 +1072,255 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* --- VISTA: GREMIO DE AVENTUREROS & RULETA GACHA --- */}
+      {currentView === 'guild' && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+            
+            {/* Tarjeta Perfil Rol / Rango */}
+            <div className="bg-slate-900/85 border border-yellow-500/30 p-6 rounded-3xl shadow-xl flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Trophy size={140} className="text-yellow-500" />
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-yellow-500/20 rounded-2xl flex items-center justify-center border border-yellow-500/40 text-yellow-400">
+                    <Award size={28} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-widest">{stats.rankTitle}</span>
+                    <h2 className="text-2xl font-black text-white">{user?.displayName || 'Aventurero'}</h2>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-6">
+                  <div className="flex justify-between text-xs font-bold text-slate-300">
+                    <span>Nivel {stats.level}</span>
+                    <span>{stats.levelProgressPercent}% para el Siguiente Rango</span>
+                  </div>
+                  
+                  {/* Barra de XP */}
+                  <div className="h-3 w-full bg-slate-950 rounded-full border border-slate-800 overflow-hidden relative">
+                    <div 
+                      className="h-full bg-gradient-to-r from-yellow-500 to-amber-400 rounded-full transition-all duration-1000"
+                      style={{ width: `${stats.levelProgressPercent}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+                    <span>{stats.progressInCurrentLevel} XP ganados</span>
+                    <span>Progreso Total: {stats.totalXp} XP</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-slate-800/60 flex justify-between items-center text-[10px] sm:text-xs text-slate-400">
+                <span>⚔️ Episodio: +15 XP</span>
+                <span>👑 Series: +150 XP</span>
+                <span>🏅 Logros: +200 XP</span>
+              </div>
+            </div>
+
+            {/* Misiones Diarias (Quests) */}
+            <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-xl">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
+                <Zap className="text-purple-500 w-5 h-5 animate-pulse" /> Misiones Otaku de Hoy
+              </h3>
+              <p className="text-slate-400 text-xs mb-6">Completa tus misiones diariamente para subir tu nivel de aventurero y desbloquear títulos exclusivos en la comunidad.</p>
+              
+              <div className="space-y-4">
+                {quests.map(q => {
+                  const isClaimed = claimedQuests.includes(q.id);
+                  return (
+                    <div key={q.id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                      q.done 
+                        ? 'bg-purple-500/5 border-purple-500/20' 
+                        : 'bg-slate-950/40 border-slate-900'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors ${
+                          q.done 
+                            ? 'bg-purple-600 border-purple-500 text-white' 
+                            : 'border-slate-800 bg-slate-950 text-slate-600'
+                        }`}>
+                          {q.done ? <Check size={14} strokeWidth={3} /> : null}
+                        </div>
+                        <div className="text-xs sm:text-sm">
+                          <p className={`font-semibold ${q.done ? 'text-slate-300' : 'text-slate-400'}`}>{q.text}</p>
+                          <span className="text-[10px] text-purple-400 font-bold font-mono">+{q.points} XP</span>
+                        </div>
+                      </div>
+
+                      {q.done ? (
+                        <button
+                          onClick={() => claimQuestXp(q.id, q.points)}
+                          disabled={isClaimed}
+                          className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow ${
+                            isClaimed 
+                              ? 'bg-slate-850 text-slate-600 cursor-not-allowed border border-slate-800' 
+                              : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-500'
+                          }`}
+                        >
+                          {isClaimed ? 'Reclamado' : 'Reclamar'}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] bg-slate-950 px-2.5 py-1 rounded-lg text-slate-500 border border-slate-900 font-bold uppercase tracking-wider">Activo</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* --- LA RULETA DEL DESTINO --- */}
+          <div className="bg-slate-900/40 rounded-3xl border border-slate-800/80 p-8 shadow-2xl relative overflow-hidden">
+            
+            <div className="max-w-xl mx-auto text-center mb-8">
+              <span className="px-3 py-1 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded-full text-xs font-extrabold uppercase tracking-widest flex items-center gap-1.5 w-fit mx-auto mb-3">
+                <Dices size={14} /> La Ruleta del Destino
+              </span>
+              <h2 className="text-3xl font-black text-white">¿No sabes qué ver hoy? Gira la Ruleta</h2>
+              <p className="text-slate-400 text-sm mt-2">Sortea entre tus animes en lista "Pendiente" o invoca un anime recomendado aleatoriamente de MyAnimeList.</p>
+            </div>
+
+            {/* Configuración de Modo */}
+            <div className="flex justify-center gap-3 mb-8">
+              <button 
+                onClick={() => setRouletteMode('pendiente')}
+                disabled={isSpinning}
+                className={`px-6 py-2.5 rounded-2xl text-xs font-extrabold tracking-wider uppercase transition-all border ${
+                  rouletteMode === 'pendiente' 
+                    ? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/10' 
+                    : 'bg-slate-950/80 border-slate-850 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Girar mis Pendientes
+              </button>
+              <button 
+                onClick={() => setRouletteMode('descubrir')}
+                disabled={isSpinning}
+                className={`px-6 py-2.5 rounded-2xl text-xs font-extrabold tracking-wider uppercase transition-all border ${
+                  rouletteMode === 'descubrir' 
+                    ? 'bg-pink-600 text-white border-pink-500 shadow-lg shadow-pink-600/10' 
+                    : 'bg-slate-950/80 border-slate-850 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Invocación Mundial (MAL)
+              </button>
+            </div>
+
+            {/* CARRUSEL DE RULETA CINEMÁTICO */}
+            <div className="relative max-w-4xl mx-auto h-52 bg-slate-950 rounded-3xl border border-slate-850 flex items-center overflow-hidden shadow-inner mb-8">
+              
+              {/* Puntero Central Selector */}
+              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1.5 bg-yellow-500 z-10 shadow-[0_0_15px_rgba(234,179,8,0.6)]">
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-4 bg-yellow-500 rotate-45 rounded-sm" />
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-4 bg-yellow-500 rotate-45 rounded-sm" />
+              </div>
+
+              {/* Degradados laterales para enfocar el centro */}
+              <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-slate-950 to-transparent z-10 pointer-events-none" />
+              <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-slate-950 to-transparent z-10 pointer-events-none" />
+
+              <div 
+                ref={carouselRef}
+                className="flex items-center gap-3 px-4 h-full"
+                style={{
+                  transform: `translateX(-${spinOffset}px)`,
+                  transition: isSpinning ? 'transform 5.5s cubic-bezier(0.1, 0.8, 0.15, 1)' : 'none',
+                  willChange: 'transform'
+                }}
+              >
+                {rouletteList.map((item) => (
+                  <div 
+                    key={item.rouletteId} 
+                    className="w-36 h-44 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex flex-col justify-between relative shadow-lg"
+                  >
+                    <img 
+                      src={item.coverUrl} 
+                      className="w-full h-full object-cover opacity-80" 
+                      onError={(e) => e.target.src='https://via.placeholder.com/150x200'}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                    <div className="absolute bottom-2 left-2 right-2">
+                      <p className="text-[10px] font-black text-white line-clamp-2 drop-shadow-md">{item.title}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* BOTÓN DISPARADOR */}
+            <div className="flex justify-center">
+              <button
+                onClick={handleStartRoulette}
+                disabled={isSpinning}
+                className="px-12 py-4 bg-gradient-to-r from-yellow-500 via-amber-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 disabled:opacity-40 text-slate-950 font-black text-sm sm:text-base uppercase tracking-widest rounded-2xl shadow-xl shadow-yellow-500/10 transition-all transform hover:scale-102 flex items-center gap-2"
+              >
+                {isSpinning ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Consultando Oráculo...
+                  </>
+                ) : (
+                  <>
+                    <Dices className="w-5 h-5" />
+                    ¡Girar Ruleta!
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* DESPLIEGUE DEL GANADOR */}
+            {winnerAnime && !isSpinning && (
+              <div className="max-w-xl mx-auto mt-12 bg-slate-900 rounded-3xl border border-yellow-500/30 p-6 shadow-2xl flex flex-col sm:flex-row items-center gap-6 animate-in zoom-in-95 duration-300">
+                <img 
+                  src={winnerAnime.coverUrl} 
+                  className="w-28 h-40 object-cover rounded-xl border border-slate-800 shadow-xl"
+                  onError={(e) => e.target.src='https://via.placeholder.com/150x200'} 
+                />
+                <div className="flex-1 text-center sm:text-left">
+                  <span className="px-2.5 py-0.5 bg-yellow-500/15 border border-yellow-500/30 text-[10px] font-bold text-yellow-500 rounded-md uppercase tracking-wider">¡Sorteo Completado!</span>
+                  <h3 className="text-xl font-black text-white leading-tight mt-2 mb-1">{winnerAnime.title}</h3>
+                  <p className="text-xs text-slate-400 mb-4">{winnerAnime.genres?.slice(0,3).join(' • ') || 'Géneros desconocidos'}</p>
+                  
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <button 
+                      onClick={() => handleOpenDetails(winnerAnime)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors"
+                    >
+                      Ver Sinopsis
+                    </button>
+                    {rouletteMode === 'pendiente' ? (
+                      <button 
+                        onClick={() => {
+                          const updated = { ...winnerAnime, status: 'Viendo' };
+                          const animesRef = collection(db, 'artifacts', appId, 'users', user?.uid, 'animes');
+                          setDoc(doc(animesRef, winnerAnime.id), updated);
+                          showToast("¡Anime marcado como Viendo!", "success");
+                        }}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition-colors"
+                      >
+                        Empezar a ver ahora
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleAddFromCatalog(winnerAnime)}
+                        className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-xl transition-colors"
+                      >
+                        Añadir a mi lista
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </main>
+      )}
 
       {/* --- VISTA: COMUNIDAD / SOCIAL (NUEVA) --- */}
       {currentView === 'community' && (
@@ -1542,13 +2015,13 @@ export default function App() {
                     <input 
                       type="text" value={apiSearchQuery} onChange={(e) => setApiSearchQuery(e.target.value)}
                       placeholder="Escribe para buscar portadas y géneros..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 pl-10 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm"
+                      className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 pl-10 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm"
                     />
                     {isSearchingApi && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-purple-500" />}
                   </div>
 
                   {apiResults.length > 0 && (
-                    <div className="absolute z-20 w-full mt-2 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2">
+                    <div className="absolute z-20 w-full mt-2 bg-slate-955 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2">
                       {apiResults.map(anime => (
                         <button key={anime.mal_id} type="button" onClick={() => selectApiResult(anime)} className="w-full flex items-center gap-3 p-3 hover:bg-slate-900 transition-colors border-b border-slate-900 last:border-0">
                           <img src={anime.images.jpg.small_image_url} className="w-10 h-14 object-cover rounded shadow" alt="cover" />
@@ -1571,13 +2044,13 @@ export default function App() {
                 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1.5">Título del Anime *</label>
-                  <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} placeholder="Ej. Shingeki no Kyojin" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                  <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} placeholder="Ej. Shingeki no Kyojin" className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1.5">Estado</label>
-                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 appearance-none">
+                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 appearance-none">
                       {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
@@ -1585,7 +2058,7 @@ export default function App() {
                     <label className="block text-sm font-medium text-slate-300 mb-1.5">Calificación (0-10)</label>
                     <div className="relative">
                       <Star className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-yellow-500" />
-                      <input type="number" min="0" max="10" value={formData.rating} onChange={(e) => setFormData({...formData, rating: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                      <input type="number" min="0" max="10" value={formData.rating} onChange={(e) => setFormData({...formData, rating: Number(e.target.value)})} className="w-full bg-slate-955 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
                     </div>
                   </div>
                 </div>
@@ -1593,25 +2066,25 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1.5">Episodios Vistos</label>
-                    <input type="number" min="0" value={formData.progress} onChange={(e) => setFormData({...formData, progress: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                    <input type="number" min="0" value={formData.progress} onChange={(e) => setFormData({...formData, progress: Number(e.target.value)})} className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1.5">Total Episodios</label>
-                    <input type="number" min="0" value={formData.totalEpisodes} onChange={(e) => setFormData({...formData, totalEpisodes: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                    <input type="number" min="0" value={formData.totalEpisodes} onChange={(e) => setFormData({...formData, totalEpisodes: Number(e.target.value)})} className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1.5">Link de visualización (Opcional)</label>
-                  <input type="url" value={formData.watchUrl} onChange={(e) => setFormData({...formData, watchUrl: e.target.value})} placeholder="https://..." className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                  <input type="url" value={formData.watchUrl} onChange={(e) => setFormData({...formData, watchUrl: e.target.value})} placeholder="https://..." className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1.5">Notas personales (Opcional)</label>
-                  <textarea rows="3" value={formData.notes || ''} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Escribe tus impresiones del anime..." className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
+                  <textarea rows="3" value={formData.notes || ''} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Escribe tus impresiones del anime..." className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
                 </div>
 
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850">
+                <div className="bg-slate-955 p-4 rounded-2xl border border-slate-850">
                   <label className="block text-sm font-medium text-slate-300 mb-3">URL de la Portada</label>
                   <input type="url" value={formData.coverUrl} onChange={(e) => setFormData({...formData, coverUrl: e.target.value})} placeholder="Pega una URL de imagen..." className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 text-sm focus:outline-none focus:border-purple-500 transition-all" />
                   {formData.coverUrl && (
@@ -1680,14 +2153,12 @@ function CountdownTimer({ broadcast }) {
       const [hours, minutes] = broadcast.time.split(':').map(Number);
       
       const now = new Date();
-      // Hora actual en Japón
       const tokyoStr = now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
       const tokyoNow = new Date(tokyoStr);
 
       let target = new Date(tokyoNow);
       target.setHours(hours, minutes, 0, 0);
 
-      // Encontrar el siguiente día de emisión
       let daysToAdd = targetDay - tokyoNow.getDay();
       if (daysToAdd < 0 || (daysToAdd === 0 && target.getTime() <= tokyoNow.getTime())) {
         daysToAdd += 7;
