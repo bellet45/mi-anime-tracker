@@ -818,8 +818,8 @@ export default function App() {
             
             {/* LADO IZQUIERDO: LOGO */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setCurrentView('list'); setViewingSharedList(null); }}>
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                <Tv className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden flex items-center justify-center shadow-lg shadow-purple-500/20 border border-purple-500/30">
+                <img src="/icono.png" alt="AniTracker Logo" className="w-full h-full object-cover" />
               </div>
               <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-300">
                 AniTracker
@@ -962,8 +962,8 @@ export default function App() {
             <div>
               <div className="flex items-center justify-between pb-6 border-b border-slate-800">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center">
-                    <Tv className="w-4 h-4 text-white" />
+                  <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center border border-purple-500/30">
+                    <img src="/icono.png" alt="AniTracker Logo" className="w-full h-full object-cover" />
                   </div>
                   <span className="font-black text-lg text-white">AniTracker</span>
                 </div>
