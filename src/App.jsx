@@ -99,9 +99,11 @@ export default function App() {
   const [isSearchingApi, setIsSearchingApi] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // ESTADOS DEL NUEVO NAVEGADOR
   const [catalogAnimes, setCatalogAnimes] = useState([]);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+  const [browseData, setBrowseData] = useState({ trending: [], upcoming: [], popular: [] });
 
   const [calendarAnimes, setCalendarAnimes] = useState([]);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
@@ -349,27 +351,64 @@ export default function App() {
     setApiSearchQuery('');
   };
 
+  // --- LÓGICA ACTUALIZADA DEL NAVEGADOR (CATÁLOGO TIPO ANILIST) ---
   useEffect(() => {
     if (currentView !== 'catalog') return;
-    const fetchCatalog = async () => {
-      setIsCatalogLoading(true);
-      try {
-        let url = 'https://api.jikan.moe/v4/top/anime?limit=24'; 
-        if (catalogSearch.trim().length > 2) {
-          url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(catalogSearch)}&limit=24`;
+    let isActive = true;
+    
+    const fetchBrowseData = async () => {
+      if (catalogSearch.trim().length > 2) {
+        // Modo Búsqueda
+        setIsCatalogLoading(true);
+        try {
+          const url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(catalogSearch)}&limit=24`;
           triggerQuestComplete('explorar'); 
+          const res = await fetch(url);
+          const data = await res.json();
+          if (isActive) setCatalogAnimes(data.data || []);
+        } catch (error) {
+          console.error("Error fetching catalog search");
+        } finally {
+          if (isActive) setIsCatalogLoading(false);
         }
-        const res = await fetch(url);
-        const data = await res.json();
-        setCatalogAnimes(data.data || []);
-      } catch (error) {
-        console.error("Error fetching catalog");
-      } finally {
-        setIsCatalogLoading(false);
+      } else {
+        // Modo Navegador AniList (Si aún no se han cargado)
+        if (browseData.trending.length === 0) {
+          setIsCatalogLoading(true);
+          try {
+            triggerQuestComplete('explorar');
+            // Fetch 1: Tendencias (En emisión)
+            const res1 = await fetch('https://api.jikan.moe/v4/seasons/now?limit=12');
+            const data1 = await res1.json();
+            await new Promise(r => setTimeout(r, 450)); 
+
+            // Fetch 2: Próximos
+            const res2 = await fetch('https://api.jikan.moe/v4/seasons/upcoming?limit=12');
+            const data2 = await res2.json();
+            await new Promise(r => setTimeout(r, 450));
+
+            // Fetch 3: Populares de todos los tiempos
+            const res3 = await fetch('https://api.jikan.moe/v4/top/anime?bypopularity=true&limit=12');
+            const data3 = await res3.json();
+
+            if (isActive) {
+              setBrowseData({
+                trending: data1.data || [],
+                upcoming: data2.data || [],
+                popular: data3.data || []
+              });
+            }
+          } catch (error) {
+            console.error("Error fetching browse data");
+          } finally {
+            if (isActive) setIsCatalogLoading(false);
+          }
+        }
       }
     };
-    const timer = setTimeout(() => { fetchCatalog(); }, 500);
-    return () => clearTimeout(timer);
+
+    const timer = setTimeout(() => { fetchBrowseData(); }, 500);
+    return () => { isActive = false; clearTimeout(timer); };
   }, [currentView, catalogSearch]);
 
   const handleAddFromCatalog = (anime) => {
@@ -393,6 +432,41 @@ export default function App() {
     });
     setEditingId(null);
     setIsModalOpen(true);
+  };
+
+  // Helper para renderizar los carruseles del nuevo navegador
+  const renderBrowseCarousel = (title, animeList) => {
+    if (!animeList || animeList.length === 0) return null;
+    return (
+      <div className="mb-12">
+        <div className="flex justify-between items-end mb-4">
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest">{title}</h3>
+        </div>
+        <div className="flex overflow-x-auto hide-scrollbar gap-4 pb-4">
+          {animeList.map(anime => (
+            <div key={anime.mal_id} onClick={() => handleOpenDetails(anime)} className="w-36 sm:w-44 shrink-0 group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10 cursor-pointer">
+              <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
+                <img src={anime.images?.jpg?.large_image_url || 'https://via.placeholder.com/400x600'} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/10 to-transparent opacity-90" />
+                <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 bg-slate-900/90 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg flex items-center gap-1 border border-slate-700">
+                  <Star className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-yellow-500 fill-yellow-500" />
+                  <span className="text-[10px] sm:text-xs font-bold text-white">{anime.score || 'N/A'}</span>
+                </div>
+                <div className="absolute bottom-0 left-0 w-full p-2 sm:p-3">
+                  <h3 className="text-xs sm:text-base font-bold text-white line-clamp-2 leading-tight mb-0.5 sm:mb-1 drop-shadow-md">{anime.title}</h3>
+                  <div className="text-[9px] sm:text-xs text-slate-300 font-medium">{anime.year || anime.status}</div>
+                </div>
+              </div>
+              <div className="p-2 sm:p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
+                <button onClick={(e) => { e.stopPropagation(); handleAddFromCatalog(anime); }} className="w-full flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-700 hover:bg-pink-600 text-white py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-sm font-bold transition-colors">
+                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" /><span className="hidden sm:inline">Añadir a mi lista</span><span className="sm:hidden">Añadir</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -794,11 +868,10 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 font-sans selection:bg-purple-500/30 pb-16 relative overflow-x-hidden">
       
-      {/* CAPA DE DETALLES GRADIENTE FLOATING */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-1/2 right-1/4 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* --- NOTIFICACIONES FLOTANTES (STACK TOASTS) --- */}
+      {/* --- NOTIFICACIONES FLOTANTES --- */}
       <div className="fixed top-20 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
         {toasts.map(toast => (
           <div key={toast.id} className="animate-in slide-in-from-right-5 fade-in duration-300 pointer-events-auto flex items-center gap-3 p-4 bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-2xl shadow-2xl">
@@ -816,7 +889,6 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
           <div className="flex items-center justify-between gap-4">
             
-            {/* LADO IZQUIERDO: LOGO */}
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setCurrentView('list'); setViewingSharedList(null); }}>
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden flex items-center justify-center shadow-lg shadow-purple-500/20 border border-purple-500/30">
                 <img src="/icono.png" alt="AniTracker Logo" className="w-full h-full object-cover" />
@@ -826,42 +898,29 @@ export default function App() {
               </h1>
             </div>
 
-            {/* --- ACCIONES PARA CELULARES (Lupa, Agregar y Menú Desplegable) --- */}
+            {/* --- ACCIONES PARA CELULARES --- */}
             <div className="flex items-center gap-2 lg:hidden">
-              {currentView === 'list' && !viewingSharedList && (
+              {(currentView === 'list' || currentView === 'catalog') && !viewingSharedList && (
                 <button 
                   onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
                   className={`p-2 rounded-xl border transition-all ${isMobileSearchOpen ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}
-                  title="Buscar"
                 >
                   <Search className="w-4 h-4" />
                 </button>
               )}
 
               {currentView === 'list' && !viewingSharedList && (
-                <button 
-                  onClick={() => handleOpenModal()} 
-                  className="p-2 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-600/20"
-                  title="Añadir Anime"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <button onClick={() => handleOpenModal()} className="p-2 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-600/20"><Plus className="w-4 h-4" /></button>
               )}
 
-              <button 
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="p-2 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl"
-                title="Menú"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl"><Menu className="w-5 h-5" /></button>
             </div>
 
             {/* --- ACCIONES PARA ESCRITORIO --- */}
             <div className="hidden lg:flex items-center gap-3">
               <div className="bg-slate-800/50 p-1 rounded-xl mr-2 border border-slate-700/50 flex">
                 <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}>Mi Lista</button>
-                <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={15}/>Catálogo</button>
+                <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'catalog' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Compass size={15}/>Navegar</button>
                 <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'guild' ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-200'}`}><Gamepad2 size={15}/>Gremio & Ruleta</button>
                 <button onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'calendar' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Calendar size={15}/>Calendario</button>
                 <button onClick={() => { setCurrentView('community'); setViewingSharedList(null); }} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${currentView === 'community' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}><Users size={15}/>Comunidad</button>
@@ -871,12 +930,8 @@ export default function App() {
               {user && !user.isAnonymous ? (
                 <div className="flex items-center gap-3 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-full shadow-lg">
                   <img src={user.photoURL || 'https://via.placeholder.com/32'} alt="Perfil" className="w-7 h-7 rounded-full border border-purple-500/50" />
-                  <span className="text-sm font-semibold text-slate-200 max-w-[120px] truncate">
-                    {user.displayName || 'Usuario'}
-                  </span>
-                  <button onClick={handleLogout} title="Cerrar sesión" className="text-slate-400 hover:text-red-400 transition-colors ml-1">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <span className="text-sm font-semibold text-slate-200 max-w-[120px] truncate">{user.displayName || 'Usuario'}</span>
+                  <button onClick={handleLogout} title="Cerrar sesión" className="text-slate-400 hover:text-red-400 transition-colors ml-1"><X className="w-4 h-4" /></button>
                 </div>
               ) : (
                 <button onClick={handleGoogleLogin} className="flex items-center gap-2 bg-white text-slate-900 hover:bg-slate-100 px-4 py-2 rounded-full text-sm font-bold transition-all shadow-md">
@@ -889,10 +944,7 @@ export default function App() {
                 <>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="text" placeholder="Filtrar..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-40 bg-slate-800/50 border border-slate-700 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 transition-all"
-                    />
+                    <input type="text" placeholder="Filtrar..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-40 bg-slate-800/50 border border-slate-700 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 transition-all" />
                   </div>
                   
                   <div className="flex shrink-0 bg-slate-800 border border-slate-700 rounded-full p-1">
@@ -906,34 +958,32 @@ export default function App() {
                     <span>{isImporting ? 'Importando...' : 'Importar'}</span>
                   </button>
 
-                  <button onClick={exportToCSV} disabled={animes.length === 0} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-700 shadow-md">
-                    <Download className="w-4 h-4" />
-                    <span>Exportar</span>
-                  </button>
+                  <button onClick={exportToCSV} disabled={animes.length === 0} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-3.5 py-2 rounded-full text-sm font-bold transition-all border border-slate-700 shadow-md"><Download className="w-4 h-4" /><span>Exportar</span></button>
 
-                  <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-sm font-bold transition-all shadow-lg shadow-purple-600/20">
-                    <Plus className="w-4 h-4" />
-                    <span>Añadir</span>
-                  </button>
+                  <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-sm font-bold transition-all shadow-lg shadow-purple-600/20"><Plus className="w-4 h-4" /><span>Añadir</span></button>
                 </>
               )}
             </div>
           </div>
 
           {/* --- BUSCADOR EXPANDIBLE SÓLO EN MÓVIL --- */}
-          {currentView === 'list' && !viewingSharedList && isMobileSearchOpen && (
+          {(currentView === 'list' || currentView === 'catalog') && !viewingSharedList && isMobileSearchOpen && (
             <div className="mt-3.5 lg:hidden flex gap-2 animate-in slide-in-from-top-3 duration-200">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
-                  type="text" placeholder="Buscar en mi lista..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  type="text" placeholder={currentView === 'catalog' ? "Buscar animes..." : "Buscar en mi lista..."} 
+                  value={currentView === 'catalog' ? catalogSearch : searchQuery} 
+                  onChange={(e) => currentView === 'catalog' ? setCatalogSearch(e.target.value) : setSearchQuery(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-purple-500 text-slate-200"
                 />
               </div>
-              <div className="flex bg-slate-800 border border-slate-700 rounded-xl p-0.5">
-                <button onClick={() => setListLayout('grid')} className={`p-1.5 rounded-lg ${listLayout === 'grid' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}><LayoutGrid className="w-4 h-4" /></button>
-                <button onClick={() => setListLayout('list')} className={`p-1.5 rounded-lg ${listLayout === 'list' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}><List className="w-4 h-4" /></button>
-              </div>
+              {currentView === 'list' && (
+                <div className="flex bg-slate-800 border border-slate-700 rounded-xl p-0.5">
+                  <button onClick={() => setListLayout('grid')} className={`p-1.5 rounded-lg ${listLayout === 'grid' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}><LayoutGrid className="w-4 h-4" /></button>
+                  <button onClick={() => setListLayout('list')} className={`p-1.5 rounded-lg ${listLayout === 'list' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}><List className="w-4 h-4" /></button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1013,7 +1063,7 @@ export default function App() {
 
               <nav className="py-6 space-y-2">
                 <button onClick={() => { setCurrentView('list'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'list' && !viewingSharedList ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Tv size={16}/> Mi Lista de Anime</button>
-                <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'catalog' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Compass size={16}/> Catálogo Mundial</button>
+                <button onClick={() => { setCurrentView('catalog'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'catalog' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Compass size={16}/> Navegar</button>
                 <button onClick={() => { setCurrentView('guild'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'guild' ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900' : 'text-slate-400 hover:bg-slate-800'}`}><Gamepad2 size={16}/> Gremio & Ruleta</button>
                 <button onClick={() => { setCurrentView('calendar'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Calendar size={16}/> Calendario Estrenos</button>
                 <button onClick={() => { setCurrentView('community'); setViewingSharedList(null); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${currentView === 'community' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Users size={16}/> Comunidad Social</button>
@@ -1031,7 +1081,63 @@ export default function App() {
         </div>
       )}
 
-      {/* --- VISTAS PRINCIPALES --- */}
+      {/* --- VISTA: NAVEGADOR (CATÁLOGO ANILIST STYLE) --- */}
+      {currentView === 'catalog' && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div>
+              <h2 className="text-3xl font-bold text-white flex items-center gap-3"><Compass className="text-pink-500 w-8 h-8" /> Navegar</h2>
+              <p className="text-slate-400 mt-2">Descubre tendencias, próximos estrenos y los animes más populares de todos los tiempos.</p>
+            </div>
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input type="text" placeholder="Buscar animes específicos..." value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} className="w-full bg-[#1e293b] border border-slate-700 rounded-full py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-500 transition-all shadow-lg text-slate-200" />
+            </div>
+          </div>
+          
+          {isCatalogLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Loader2 className="w-12 h-12 mb-4 animate-spin text-pink-500" /><p className="font-medium">Sintonizando frecuencias de anime...</p></div>
+          ) : catalogSearch.trim().length > 2 ? (
+            /* RESULTADOS DE BÚSQUEDA GRID MODO */
+            catalogAnimes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Compass className="w-16 h-16 mb-4 opacity-20" /><p className="text-lg">No se encontraron resultados.</p></div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-6">
+                {catalogAnimes.map(anime => (
+                  <div key={anime.mal_id} onClick={() => handleOpenDetails(anime)} className="group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10 cursor-pointer">
+                    <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
+                      <img src={anime.images?.jpg?.large_image_url || 'https://via.placeholder.com/400x600'} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/10 to-transparent opacity-90" />
+                      <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 bg-slate-900/90 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg flex items-center gap-1 border border-slate-700">
+                        <Star className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-yellow-500 fill-yellow-500" />
+                        <span className="text-[10px] sm:text-xs font-bold text-white">{anime.score || 'N/A'}</span>
+                      </div>
+                      <div className="absolute bottom-0 left-0 w-full p-2 sm:p-3">
+                        <h3 className="text-xs sm:text-base font-bold text-white line-clamp-2 leading-tight mb-0.5 sm:mb-1 drop-shadow-md">{anime.title}</h3>
+                        <div className="text-[9px] sm:text-xs text-slate-300 font-medium">{anime.year || anime.status}</div>
+                      </div>
+                    </div>
+                    <div className="p-2 sm:p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
+                      <button onClick={(e) => { e.stopPropagation(); handleAddFromCatalog(anime); }} className="w-full flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-700 hover:bg-pink-600 text-white py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-sm font-bold transition-colors">
+                        <Plus className="w-3 h-3 sm:w-4 sm:h-4" /><span className="hidden sm:inline">Añadir a mi lista</span><span className="sm:hidden">Añadir</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            /* CARRUSELES ESTILO ANILIST */
+            <div className="space-y-4">
+              {renderBrowseCarousel("Tendencias Actuales", browseData.trending)}
+              {renderBrowseCarousel("Popular Esta Temporada (Próximos)", browseData.upcoming)}
+              {renderBrowseCarousel("Popular De Todos Los Tiempos", browseData.popular)}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* --- VISTA: GREMIO DE AVENTUREROS & RULETA GACHA --- */}
       {currentView === 'guild' && (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
@@ -1189,7 +1295,7 @@ export default function App() {
                     </div>
                     <div className="grid grid-cols-4 gap-2 mb-4">
                       {(profile.animes || []).slice(0, 4).map((anime, i) => (
-                        <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden bg-slate-900 relative group">
+                        <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden bg-slate-950 relative group">
                           <img src={anime?.coverUrl || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" onError={(e)=>e.target.src='https://via.placeholder.com/100'} />
                           {anime?.rating > 0 && <div className="absolute top-1 left-1 bg-slate-900/95 px-1 py-0.5 rounded text-[8px] text-yellow-500 flex items-center gap-0.5">★{anime.rating}</div>}
                         </div>
@@ -1207,50 +1313,7 @@ export default function App() {
         </main>
       )}
 
-      {currentView === 'catalog' && (
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-white flex items-center gap-3"><Compass className="text-pink-500 w-8 h-8" /> Catálogo Global</h2>
-              <p className="text-slate-400 mt-2">Explora todos los animes del mundo y añádelos directamente a tu lista.</p>
-            </div>
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input type="text" placeholder="Buscar nuevos animes..." value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-full py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-500 transition-all shadow-lg" />
-            </div>
-          </div>
-          {isCatalogLoading ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Loader2 className="w-12 h-12 mb-4 animate-spin text-pink-500" /><p className="font-medium">Explorando...</p></div>
-          ) : catalogAnimes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Compass className="w-16 h-16 mb-4 opacity-20" /><p className="text-lg">No hay resultados.</p></div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-6">
-              {catalogAnimes.map(anime => (
-                <div key={anime.mal_id} onClick={() => handleOpenDetails(anime)} className="group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10 cursor-pointer">
-                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
-                    <img src={anime.images?.jpg?.large_image_url || 'https://via.placeholder.com/400x600'} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/10 to-transparent opacity-90" />
-                    <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 bg-slate-900/90 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg flex items-center gap-1 border border-slate-700">
-                      <Star className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-[10px] sm:text-xs font-bold text-white">{anime.score || 'N/A'}</span>
-                    </div>
-                    <div className="absolute bottom-0 left-0 w-full p-2 sm:p-3">
-                      <h3 className="text-xs sm:text-base font-bold text-white line-clamp-2 leading-tight mb-0.5 sm:mb-1 drop-shadow-md">{anime.title}</h3>
-                      <div className="text-[9px] sm:text-xs text-slate-300 font-medium">{anime.year || anime.status} • {anime.episodes ? `${anime.episodes} EPS` : '? EPS'}</div>
-                    </div>
-                  </div>
-                  <div className="p-2 sm:p-3 bg-slate-800 flex-1 flex flex-col justify-end border-t border-slate-700/50">
-                    <button onClick={(e) => { e.stopPropagation(); handleAddFromCatalog(anime); }} className="w-full flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-700 hover:bg-pink-600 text-white py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-sm font-bold transition-colors">
-                      <Plus className="w-3 h-3 sm:w-4 sm:h-4" /><span className="hidden sm:inline">Añadir a mi lista</span><span className="sm:hidden">Añadir</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </main>
-      )}
-
+      {/* --- VISTA: CALENDARIO DE ESTRENOS --- */}
       {currentView === 'calendar' && (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="mb-8">
@@ -1428,7 +1491,7 @@ export default function App() {
                       </div>
 
                       {!viewingSharedList && (
-                        <div className="bg-[#1e293b] p-2 border-t border-slate-700/50 flex items-center justify-between" onClick={(e)=>e.stopPropagation()}>
+                        <div className="bg-[#1e293b] p-1 sm:p-2 border-t border-slate-700/50 flex items-center justify-between" onClick={(e)=>e.stopPropagation()}>
                           <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="text-[10px] font-bold px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md transition-all disabled:opacity-40">-1</button>
                           <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">Progreso</span>
                           <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all">+1 EP</button>
@@ -1440,7 +1503,7 @@ export default function App() {
 
                 return (
                   <div key={anime.id || anime.title} onClick={() => handleOpenDetails(anime)} className="group flex flex-row bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer">
-                    <div className="relative w-24 sm:w-28 shrink-0 bg-slate-800">
+                    <div className="relative w-20 sm:w-28 shrink-0 bg-slate-800">
                       {anime.coverUrl ? (<img src={anime.coverUrl} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />) : (<div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8" /></div>)}
                     </div>
                     <div className="flex-1 p-3 sm:p-5 flex flex-col justify-between min-w-0">
@@ -1454,18 +1517,18 @@ export default function App() {
                           <h3 className="text-xs sm:text-xl font-bold text-white mb-0.5 sm:mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
                           {anime.genres && anime.genres.length > 0 && <p className="text-[9px] sm:text-xs text-slate-500 truncate">{anime.genres.slice(0,3).join(', ')}</p>}
                         </div>
-                        <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 shrink-0" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={(e)=>e.stopPropagation()}>
                           {viewingSharedList ? (
                             <button onClick={() => handleCloneAnime(anime)} className="p-2 bg-slate-800 hover:bg-blue-600 text-white rounded-xl transition-all" title="Clonar"><ArrowUpRight size={14} /></button>
                           ) : (
                             <>
                               <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                               <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                              {anime.watchUrl && (
-                                <a href={anime.watchUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 sm:p-2 bg-slate-800 hover:bg-blue-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Ver Anime">
-                                  <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                </a>
-                              )}
+                              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 ml-1">
+                                <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="px-2 py-1 text-slate-500 hover:text-white font-mono text-xs">-</button>
+                                <span className="text-xs px-1 text-slate-400 font-bold">{anime.progress}</span>
+                                <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="px-2 py-1 text-purple-400 hover:text-white font-mono text-xs">+</button>
+                              </div>
                             </>
                           )}
                         </div>
