@@ -1804,20 +1804,29 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE FELICITACIÓN --- */}
+       {/* --- MODAL DE FELICITACIÓN (ANIME COMPLETADO) --- */}
       {celebrationAnime && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#0f172a]/80 backdrop-blur-md" onClick={() => setCelebrationAnime(null)} />
-          <div className="relative w-full max-w-md bg-gradient-to-b from-slate-900 to-[#0f172a] border-2 border-yellow-500/40 p-8 rounded-3xl text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 mx-auto bg-yellow-500/15 rounded-full flex items-center justify-center text-yellow-400 border border-yellow-500/30 mb-4 animate-bounce"><Trophy size={32}/></div>
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setCelebrationAnime(null)} />
+          <div className="relative w-full max-w-md bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-yellow-500/40 p-8 rounded-3xl text-center shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 mx-auto bg-yellow-500/15 rounded-full flex items-center justify-center text-yellow-400 border border-yellow-500/30 mb-4 animate-bounce">
+              <Trophy size={32}/>
+            </div>
             <h2 className="text-2xl font-black text-yellow-400 mb-1 flex items-center justify-center gap-1.5"><Sparkles size={22}/> ¡Felicidades! <Sparkles size={22}/></h2>
             <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-4">Completaste un Anime</p>
-            <div className="bg-[#1e293b] p-4 rounded-2xl border border-slate-800 mb-6 flex flex-col items-center">
-              <img src={celebrationAnime.coverUrl} className="w-24 h-36 object-cover rounded-xl border border-slate-700 shadow-xl mb-3" />
+            
+            <div className="bg-slate-955 p-4 rounded-2xl border border-slate-850 mb-6 flex flex-col items-center">
+              <img src={celebrationAnime.coverUrl} className="w-24 h-36 object-cover rounded-xl border border-slate-800 shadow-xl mb-3" />
               <h3 className="font-bold text-white text-base leading-snug">{celebrationAnime.title}</h3>
               <p className="text-xs text-slate-400 mt-1">Acabas de terminar de ver los {celebrationAnime.totalEpisodes} episodios.</p>
             </div>
-            <button onClick={() => setCelebrationAnime(null)} className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-black py-3 rounded-xl text-sm transition-all">¡Seguir Maratoneando!</button>
+
+            <button 
+              onClick={() => setCelebrationAnime(null)}
+              className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-955 font-black py-3 rounded-xl text-sm transition-all"
+            >
+              ¡Seguir Maratoneando!
+            </button>
           </div>
         </div>
       )}
@@ -1825,98 +1834,140 @@ export default function App() {
       {/* --- MODAL PARA AÑADIR/EDITAR --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#0f172a]/80 backdrop-blur-sm" onClick={handleCloseModal} />
+          <div className="absolute inset-0 bg-slate-955/80 backdrop-blur-sm" onClick={handleCloseModal} />
+          
           <div className="relative w-full max-w-xl bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-[#0f172a]/50">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">{editingId ? 'Editar Anime' : 'Añadir a mi lista'}</h2>
-              <button onClick={handleCloseModal} className="text-slate-400 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
+            <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                {editingId ? 'Editar Progreso' : 'Añadir a mi lista'}
+              </h2>
+              <button onClick={handleCloseModal} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
             </div>
+
             <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-              {!editingId && (
-                <div className="relative">
-                  <label className="block text-sm font-bold text-purple-400 mb-2">Buscar Anime (MyAnimeList)</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" value={apiSearchQuery} onChange={(e) => setApiSearchQuery(e.target.value)} placeholder="Escribe para buscar portadas y géneros..." className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 pl-10 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
-                    {isSearchingApi && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-purple-500" />}
+              
+              {/* PASO 1: BÚSQUEDA (Solo visible al añadir uno nuevo) */}
+              {!editingId && !formData.title && (
+                <div className="relative animate-in fade-in duration-300">
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-purple-500/20">
+                      <Search className="w-8 h-8 text-purple-400" />
+                    </div>
+                    <h3 className="font-bold text-white text-lg">Encuentra tu Anime</h3>
+                    <p className="text-sm text-slate-400 mt-1">Busca en la base de datos mundial para autocompletar la portada y detalles.</p>
                   </div>
+                  
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="text" value={apiSearchQuery} onChange={(e) => setApiSearchQuery(e.target.value)}
+                      placeholder="Escribe el título (ej. Naruto, Jujutsu Kaisen)..."
+                      className="w-full bg-slate-955 border border-slate-800 rounded-2xl px-4 py-4 pl-12 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm shadow-inner"
+                    />
+                    {isSearchingApi && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-purple-500" />}
+                  </div>
+
                   {apiResults.length > 0 && (
-                    <div className="absolute z-20 w-full mt-2 bg-[#1e293b] border border-slate-700 rounded-xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2">
+                    <div className="absolute z-20 w-full mt-2 bg-slate-955 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 max-h-64 overflow-y-auto custom-scrollbar">
                       {apiResults.map(anime => (
-                        <button key={anime.mal_id} type="button" onClick={() => selectApiResult(anime)} className="w-full flex items-center gap-3 p-3 hover:bg-slate-800 transition-colors border-b border-slate-700 last:border-0">
-                          <img src={anime.images.jpg.small_image_url} className="w-10 h-14 object-cover rounded shadow" alt="cover" />
-                          <div className="text-left">
+                        <button key={anime.mal_id} type="button" onClick={() => selectApiResult(anime)} className="w-full flex items-center gap-4 p-3 hover:bg-slate-900 transition-colors border-b border-slate-800/50 last:border-0">
+                          <img src={anime.images.jpg.small_image_url} className="w-12 h-16 object-cover rounded-lg shadow" alt="cover" />
+                          <div className="text-left flex-1 min-w-0">
                             <div className="text-sm font-bold text-slate-100 line-clamp-1">{anime.title}</div>
-                            <div className="text-xs text-slate-500">{anime.type} • {anime.episodes || '?'} EP • {anime.year || ''}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{anime.type} • {anime.episodes || '?'} EP • {anime.year || ''}</div>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-slate-600 ml-auto" />
+                          <ChevronRight className="w-5 h-5 text-slate-600 shrink-0" />
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               )}
+
               {errorMsg && <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm font-medium">{errorMsg}</div>}
-              <div className="space-y-4 border-t border-slate-800/50 pt-4">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Información Manual</p>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5">Título del Anime *</label>
-                  <input type="text" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} placeholder="Ej. Shingeki no Kyojin" className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Estado</label>
-                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 appearance-none">
-                      {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+
+              {/* PASO 2: FORMULARIO DE SEGUIMIENTO (Oculta las entradas manuales engorrosas) */}
+              {formData.title && (
+                <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+                  
+                  {/* Tarjeta de Resumen Bloqueada */}
+                  <div className="flex items-center gap-4 bg-slate-955 p-4 rounded-2xl border border-slate-800">
+                    <img src={formData.coverUrl || 'https://via.placeholder.com/150'} alt="Cover" className="w-16 h-24 object-cover rounded-xl shadow-md border border-slate-700" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-white text-lg leading-tight line-clamp-2">{formData.title}</h3>
+                      <p className="text-xs text-slate-400 mt-1">Total Episodios: <span className="font-bold text-slate-300">{formData.totalEpisodes || 'En emisión'}</span></p>
+                      
+                      {/* Botón para deshacer si se equivocó de anime al buscar */}
+                      {!editingId && (
+                        <button 
+                          onClick={() => setFormData({ ...formData, title: '', coverUrl: '', totalEpisodes: 0, malId: '' })} 
+                          className="text-[10px] font-bold text-purple-400 mt-2 hover:text-purple-300 bg-purple-500/10 px-2.5 py-1.5 rounded-md border border-purple-500/20 transition-colors flex items-center gap-1 w-fit"
+                        >
+                          <Search className="w-3 h-3"/> Buscar otro anime
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Calificación (0-10)</label>
-                    <div className="relative">
-                      <Star className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-yellow-500" />
-                      <input type="number" min="0" max="10" value={formData.rating} onChange={(e) => setFormData({...formData, rating: Number(e.target.value)})} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1.5">Estado actual</label>
+                        <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 appearance-none">
+                          {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1.5">Mi Calificación (0-10)</label>
+                        <div className="relative">
+                          <Star className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-yellow-500" />
+                          <input type="number" min="0" max="10" value={formData.rating} onChange={(e) => setFormData({...formData, rating: Number(e.target.value)})} className="w-full bg-slate-955 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contador de Episodios con Botones Grandes */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1.5">Episodios Vistos</label>
+                      <div className="flex items-center bg-slate-955 border border-slate-800 rounded-xl overflow-hidden p-1 shadow-inner">
+                        <button type="button" onClick={() => setFormData({...formData, progress: Math.max(0, formData.progress - 1)})} className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 rounded-lg transition-colors font-bold text-lg">-</button>
+                        <input type="number" min="0" max={formData.totalEpisodes || 9999} value={formData.progress} onChange={(e) => setFormData({...formData, progress: Number(e.target.value)})} className="flex-1 bg-transparent text-center text-slate-200 focus:outline-none font-black text-xl" />
+                        <button type="button" onClick={() => setFormData({...formData, progress: (formData.totalEpisodes > 0 ? Math.min(formData.totalEpisodes, formData.progress + 1) : formData.progress + 1)})} className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors font-bold text-lg">+</button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1.5">Enlace para ver (Opcional)</label>
+                      <input type="url" value={formData.watchUrl} onChange={(e) => setFormData({...formData, watchUrl: e.target.value})} placeholder="Ej. https://crunchyroll.com/..." className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1.5">Notas o Reseña (Opcional)</label>
+                      <textarea rows="3" value={formData.notes || ''} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Escribe tus impresiones del anime..." className="w-full bg-slate-955 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Episodios Vistos</label>
-                    <input type="number" min="0" value={formData.progress} onChange={(e) => setFormData({...formData, progress: Number(e.target.value)})} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Total Episodios</label>
-                    <input type="number" min="0" value={formData.totalEpisodes} onChange={(e) => setFormData({...formData, totalEpisodes: Number(e.target.value)})} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5">Link de visualización (Opcional)</label>
-                  <input type="url" value={formData.watchUrl} onChange={(e) => setFormData({...formData, watchUrl: e.target.value})} placeholder="https://..." className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5">Notas personales (Opcional)</label>
-                  <textarea rows="3" value={formData.notes || ''} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Escribe tus impresiones del anime..." className="w-full bg-[#1e293b] border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-purple-500 transition-all text-sm" />
-                </div>
-                <div className="bg-[#1e293b] p-4 rounded-2xl border border-slate-700">
-                  <label className="block text-sm font-medium text-slate-300 mb-3">URL de la Portada</label>
-                  <input type="url" value={formData.coverUrl} onChange={(e) => setFormData({...formData, coverUrl: e.target.value})} placeholder="Pega una URL de imagen..." className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 text-sm focus:outline-none focus:border-purple-500 transition-all" />
-                  {formData.coverUrl && (
-                    <div className="mt-4 flex justify-center">
-                      <img src={formData.coverUrl} alt="Preview" className="h-32 rounded-lg object-cover border border-slate-700 shadow-lg" onError={(e) => e.target.style.display = 'none'} />
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
-            <div className="p-6 border-t border-slate-800 bg-[#0f172a] flex justify-end gap-3">
+
+            <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3">
               <button onClick={handleCloseModal} className="px-6 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-white transition-colors">Cancelar</button>
-              <button onClick={handleSave} className="px-8 py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-600/20">{editingId ? 'Actualizar' : 'Guardar Anime'}</button>
+              <button 
+                onClick={handleSave} 
+                disabled={!formData.title} 
+                className="px-8 py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white transition-all shadow-lg shadow-purple-600/20"
+              >
+                {editingId ? 'Actualizar' : 'Guardar Anime'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* FOOTER COMPACTO */}
-      <footer className="text-center py-8 text-xs text-slate-600 border-t border-slate-900 mt-12 bg-[#0f172a]">
+      <footer className="text-center py-8 text-xs text-slate-600 border-t border-slate-900 mt-12 bg-slate-950">
         <p className="font-semibold">AniTracker Premium Suite © 2026</p>
         <p className="mt-1">Gestiona, rastrea y comparte tu pasión por el Anime.</p>
       </footer>
