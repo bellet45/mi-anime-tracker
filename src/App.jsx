@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Search, Edit3, Trash2, ExternalLink, Image as ImageIcon, 
   PlayCircle, Clock, CheckCircle2, PauseCircle, XCircle, 
-  Tv, Star, X, Loader2, ChevronRight, BarChart3, Trophy, 
+  Tv, Star, X, Loader2, ChevronRight, ChevronLeft, BarChart3, Trophy, 
   Target, Flame, Medal, Download, Compass,
   LayoutGrid, List, Calendar, Upload, Share2, Users, ArrowUpRight,
   Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart,
@@ -140,6 +140,9 @@ export default function App() {
   const [spinOffset, setSpinOffset] = useState(0);
   const [winnerAnime, setWinnerAnime] = useState(null);
   const carouselRef = useRef(null);
+  
+  // NUEVO: Referencia para controlar que el Auto-Sync se ejecute una sola vez por sesión
+  const hasAutoSynced = useRef(false);
 
   const showToast = (message, type = 'success') => {
     const id = Date.now() + Math.random().toString(36).substring(2, 5);
@@ -250,6 +253,83 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [user]);
+
+  // --- NUEVA FUNCIÓN: AUTO-SINCRONIZACIÓN DE EPISODIOS EN EMISIÓN ---
+  useEffect(() => {
+    if (!user || animes.length === 0 || hasAutoSynced.current) return;
+    
+    const syncAiringAnimes = async () => {
+      hasAutoSynced.current = true; // Bloquea múltiples ejecuciones
+      const lastSync = localStorage.getItem('otaku_auto_sync_date');
+      const today = new Date().toDateString();
+
+      if (lastSync === today) return; // Solo sincronizamos 1 vez al día para no saturar
+
+      // Filtramos solo los animes que estás viendo y que tienen un ID válido
+      const viendoAnimes = animes.filter(a => a.status === 'Viendo' && a.malId);
+      if (viendoAnimes.length === 0) {
+        localStorage.setItem('otaku_auto_sync_date', today);
+        return;
+      }
+
+      let updatedCount = 0;
+      const animesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'animes');
+
+      for (const anime of viendoAnimes) {
+        try {
+          const res = await fetch(`https://api.jikan.moe/v4/anime/${anime.malId}`);
+          if (!res.ok) {
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+          }
+          const data = await res.json();
+          const apiAnime = data.data;
+
+          if (!apiAnime) continue;
+
+          let newTotal = anime.totalEpisodes || 0;
+          let shouldUpdate = false;
+
+          // 1er Caso: El anime tiene un total definido en la API y es mayor a lo que tenemos
+          if (apiAnime.episodes && apiAnime.episodes > newTotal) {
+            newTotal = apiAnime.episodes;
+            shouldUpdate = true;
+          } 
+          // 2do Caso: Anime infinito/emisión (Ej. One Piece). La API no pone total, buscamos los emitidos
+          else if (apiAnime.status === "Currently Airing" && !apiAnime.episodes) {
+            await new Promise(r => setTimeout(r, 450)); // Respeto al Rate Limit
+            const epRes = await fetch(`https://api.jikan.moe/v4/anime/${anime.malId}/episodes`);
+            if (epRes.ok) {
+                const epData = await epRes.json();
+                const airedEps = epData.pagination?.items?.total;
+                if (airedEps && airedEps > newTotal) {
+                  newTotal = airedEps;
+                  shouldUpdate = true;
+                }
+            }
+          }
+
+          // Si hay episodios nuevos, se actualiza silenciosamente en Firebase
+          if (shouldUpdate) {
+            await setDoc(doc(animesRef, anime.id), { ...anime, totalEpisodes: newTotal }, { merge: true });
+            updatedCount++;
+          }
+          
+          await new Promise(r => setTimeout(r, 450)); // Respetar Rate-limit de Jikan
+        } catch (e) {
+          console.error("Error auto-sincronizando", anime.title, e);
+        }
+      }
+
+      if (updatedCount > 0) {
+        showToast(`¡Auto-Sync: ${updatedCount} animes en emisión han actualizado sus capítulos totales! 🚀`, 'info');
+      }
+      localStorage.setItem('otaku_auto_sync_date', today);
+    };
+
+    syncAiringAnimes();
+  }, [user, animes]);
+  // --- FIN DE LA NUEVA FUNCIÓN ---
 
   useEffect(() => {
     if (!user) return;
@@ -437,12 +517,30 @@ export default function App() {
   // Helper para renderizar los carruseles del nuevo navegador
   const renderBrowseCarousel = (title, animeList) => {
     if (!animeList || animeList.length === 0) return null;
+    const carouselId = `carousel-${title.replace(/\s+/g, '-').toLowerCase()}`;
+
+    const scroll = (direction) => {
+      const container = document.getElementById(carouselId);
+      if (container) {
+        const scrollAmount = direction === 'left' ? -600 : 600;
+        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      }
+    };
+
     return (
       <div className="mb-12">
-        <div className="flex justify-between items-end mb-4">
+        <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest">{title}</h3>
+          <div className="flex gap-2">
+            <button onClick={() => scroll('left')} className="p-1.5 rounded-lg bg-slate-800 hover:bg-pink-600 text-slate-400 hover:text-white transition-colors border border-slate-700">
+              <ChevronLeft size={18} />
+            </button>
+            <button onClick={() => scroll('right')} className="p-1.5 rounded-lg bg-slate-800 hover:bg-pink-600 text-slate-400 hover:text-white transition-colors border border-slate-700">
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
-        <div className="flex overflow-x-auto hide-scrollbar gap-4 pb-4">
+        <div id={carouselId} className="flex overflow-x-auto hide-scrollbar gap-4 pb-4">
           {animeList.map(anime => (
             <div key={anime.mal_id} onClick={() => handleOpenDetails(anime)} className="w-36 sm:w-44 shrink-0 group relative bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-pink-500/50 transition-all duration-300 flex flex-col hover:shadow-xl hover:shadow-pink-500/10 cursor-pointer">
               <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
