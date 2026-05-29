@@ -6,7 +6,7 @@ import {
   Target, Flame, Medal, Download, Compass,
   LayoutGrid, List, Calendar, Upload, Share2, Users, ArrowUpRight,
   Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart,
-  Gamepad2, Dices, Award, Zap, Menu
+  Gamepad2, Dices, Award, Zap, Menu, ChevronDown
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -102,6 +102,10 @@ export default function App() {
   // ESTADOS DEL NUEVO NAVEGADOR
   const [catalogAnimes, setCatalogAnimes] = useState([]);
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogGenre, setCatalogGenre] = useState('');
+  const [catalogYear, setCatalogYear] = useState('');
+  const [catalogSeason, setCatalogSeason] = useState('');
+  const [catalogFormat, setCatalogFormat] = useState('');
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [browseData, setBrowseData] = useState({ trending: [], upcoming: [], popular: [] });
 
@@ -431,17 +435,32 @@ export default function App() {
     setApiSearchQuery('');
   };
 
-  // --- LÓGICA ACTUALIZADA DEL NAVEGADOR (CATÁLOGO TIPO ANILIST) ---
+  // --- LÓGICA ACTUALIZADA DEL NAVEGADOR (CATÁLOGO TIPO ANILIST CON FILTROS) ---
   useEffect(() => {
     if (currentView !== 'catalog') return;
     let isActive = true;
     
     const fetchBrowseData = async () => {
-      if (catalogSearch.trim().length > 2) {
-        // Modo Búsqueda
+      const isFiltering = catalogSearch.trim().length > 2 || catalogGenre || catalogYear || catalogSeason || catalogFormat;
+
+      if (isFiltering) {
+        // Modo Búsqueda y Filtros
         setIsCatalogLoading(true);
         try {
-          const url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(catalogSearch)}&limit=24`;
+          let url = `https://api.jikan.moe/v4/anime?limit=24`;
+          if (catalogSearch.trim().length > 2) url += `&q=${encodeURIComponent(catalogSearch)}`;
+          if (catalogGenre) url += `&genres=${catalogGenre}`;
+          if (catalogFormat) url += `&type=${catalogFormat}`;
+          
+          if (catalogYear) {
+            let startMonth = '01', endMonth = '12', endDay = '31';
+            if (catalogSeason === 'winter') { startMonth = '01'; endMonth = '03'; endDay = '31'; }
+            if (catalogSeason === 'spring') { startMonth = '04'; endMonth = '06'; endDay = '30'; }
+            if (catalogSeason === 'summer') { startMonth = '07'; endMonth = '09'; endDay = '30'; }
+            if (catalogSeason === 'fall') { startMonth = '10'; endMonth = '12'; endDay = '31'; }
+            url += `&start_date=${catalogYear}-${startMonth}-01&end_date=${catalogYear}-${endMonth}-${endDay}`;
+          }
+
           triggerQuestComplete('explorar'); 
           const res = await fetch(url);
           const data = await res.json();
@@ -452,7 +471,7 @@ export default function App() {
           if (isActive) setIsCatalogLoading(false);
         }
       } else {
-        // Modo Navegador AniList (Si aún no se han cargado)
+        // Modo Navegador AniList (Si no hay filtros activos y no se han cargado)
         if (browseData.trending.length === 0) {
           setIsCatalogLoading(true);
           try {
@@ -483,13 +502,16 @@ export default function App() {
           } finally {
             if (isActive) setIsCatalogLoading(false);
           }
+        } else {
+           // Limpiar los resultados si borró todos los filtros
+           if (isActive) setCatalogAnimes([]);
         }
       }
     };
 
     const timer = setTimeout(() => { fetchBrowseData(); }, 500);
     return () => { isActive = false; clearTimeout(timer); };
-  }, [currentView, catalogSearch]);
+  }, [currentView, catalogSearch, catalogGenre, catalogYear, catalogSeason, catalogFormat]);
 
   const handleAddFromCatalog = (anime) => {
     let parsedDuration = 24;
@@ -1182,20 +1204,83 @@ export default function App() {
       {/* --- VISTA: NAVEGADOR (CATÁLOGO ANILIST STYLE) --- */}
       {currentView === 'catalog' && (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-white flex items-center gap-3"><Compass className="text-pink-500 w-8 h-8" /> Navegar</h2>
-              <p className="text-slate-400 mt-2">Descubre tendencias, próximos estrenos y los animes más populares de todos los tiempos.</p>
+          
+          {/* BARRA DE FILTROS AVANZADA (Estilo AniList) */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-10">
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-xs font-bold text-slate-300 mb-2">Búsqueda</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input type="text" placeholder="Buscar..." value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} className="w-full bg-[#1e293b]/60 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-pink-500 transition-all text-slate-200" />
+              </div>
             </div>
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input type="text" placeholder="Buscar animes específicos..." value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} className="w-full bg-[#1e293b] border border-slate-700 rounded-full py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-500 transition-all shadow-lg text-slate-200" />
+            
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">Géneros</label>
+              <div className="relative">
+                <select value={catalogGenre} onChange={(e) => setCatalogGenre(e.target.value)} className="w-full bg-[#1e293b]/60 border border-slate-800 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-pink-500 transition-all text-slate-200 appearance-none">
+                  <option value="">Cualquiera</option>
+                  <option value="1">Acción</option>
+                  <option value="2">Aventura</option>
+                  <option value="4">Comedia</option>
+                  <option value="8">Drama</option>
+                  <option value="10">Fantasía</option>
+                  <option value="14">Horror</option>
+                  <option value="22">Romance</option>
+                  <option value="24">Sci-Fi</option>
+                  <option value="36">Slice of Life</option>
+                  <option value="30">Deportes</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">Año</label>
+              <div className="relative">
+                <select value={catalogYear} onChange={(e) => setCatalogYear(e.target.value)} className="w-full bg-[#1e293b]/60 border border-slate-800 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-pink-500 transition-all text-slate-200 appearance-none">
+                  <option value="">Cualquiera</option>
+                  {Array.from({length: 30}, (_, i) => new Date().getFullYear() + 1 - i).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">Temporada</label>
+              <div className="relative">
+                <select value={catalogSeason} onChange={(e) => setCatalogSeason(e.target.value)} className="w-full bg-[#1e293b]/60 border border-slate-800 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-pink-500 transition-all text-slate-200 appearance-none">
+                  <option value="">Cualquiera</option>
+                  <option value="winter">Invierno</option>
+                  <option value="spring">Primavera</option>
+                  <option value="summer">Verano</option>
+                  <option value="fall">Otoño</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-2">Formato</label>
+              <div className="relative">
+                <select value={catalogFormat} onChange={(e) => setCatalogFormat(e.target.value)} className="w-full bg-[#1e293b]/60 border border-slate-800 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-pink-500 transition-all text-slate-200 appearance-none">
+                  <option value="">Cualquiera</option>
+                  <option value="tv">Serie TV</option>
+                  <option value="movie">Película</option>
+                  <option value="ova">OVA</option>
+                  <option value="special">Especial</option>
+                  <option value="ona">ONA</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
             </div>
           </div>
           
           {isCatalogLoading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Loader2 className="w-12 h-12 mb-4 animate-spin text-pink-500" /><p className="font-medium">Sintonizando frecuencias de anime...</p></div>
-          ) : catalogSearch.trim().length > 2 ? (
+          ) : (catalogSearch.trim().length > 2 || catalogGenre || catalogYear || catalogSeason || catalogFormat) ? (
             /* RESULTADOS DE BÚSQUEDA GRID MODO */
             catalogAnimes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Compass className="w-16 h-16 mb-4 opacity-20" /><p className="text-lg">No se encontraron resultados.</p></div>
