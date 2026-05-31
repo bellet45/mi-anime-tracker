@@ -109,6 +109,8 @@ export default function App() {
   const [catalogFormat, setCatalogFormat] = useState('');
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [browseData, setBrowseData] = useState({ trending: [], upcoming: [], popular: [] });
+  const [oracleRecommendations, setOracleRecommendations] = useState([]);
+  const [oracleSourceAnime, setOracleSourceAnime] = useState(null);
 
   const [calendarAnimes, setCalendarAnimes] = useState([]);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
@@ -513,6 +515,41 @@ export default function App() {
     const timer = setTimeout(() => { fetchBrowseData(); }, 500);
     return () => { isActive = false; clearTimeout(timer); };
   }, [currentView, catalogSearch, catalogGenre, catalogYear, catalogSeason, catalogFormat]);
+
+  // --- ORÁCULO DE LA IA ---
+  useEffect(() => {
+    if (currentView !== 'catalog') return;
+
+    const fetchOracle = async () => {
+      const eligible = animes.filter(a => a.status === 'Terminado' && a.rating >= 8 && a.malId);
+      if (eligible.length === 0) return;
+
+      const sourceAnime = eligible[Math.floor(Math.random() * eligible.length)];
+      setOracleSourceAnime(sourceAnime);
+
+      try {
+        const res = await fetch(`https://api.jikan.moe/v4/anime/${sourceAnime.malId}/recommendations`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.data && data.data.length > 0) {
+          const formattedRecs = data.data.slice(0, 15).map(rec => ({
+            ...rec.entry,
+            mal_id: rec.entry.mal_id,
+            images: rec.entry.images,
+            title: rec.entry.title
+          }));
+          setOracleRecommendations(formattedRecs);
+        }
+      } catch (e) {
+        console.error("Error fetching oracle recommendations", e);
+      }
+    };
+
+    if (oracleRecommendations.length === 0) {
+      fetchOracle();
+    }
+  }, [currentView, animes]);
 
   const handleAddFromCatalog = (anime) => {
     let parsedDuration = 24;
@@ -1312,6 +1349,14 @@ export default function App() {
           ) : (
             /* CARRUSELES ESTILO ANILIST */
             <div className="space-y-4">
+              {oracleRecommendations.length > 0 && oracleSourceAnime && (
+                <div className="relative mb-10 bg-gradient-to-r from-purple-900/30 via-[#1e293b]/80 to-[#1e293b]/80 border border-purple-500/30 rounded-3xl pt-8 pb-2 px-4 shadow-[0_0_30px_rgba(168,85,247,0.1)]">
+                  <div className="absolute -top-3 left-4 bg-purple-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-purple-500/50 flex items-center gap-1 z-10">
+                    <Sparkles size={12} /> El Oráculo de la IA
+                  </div>
+                  {renderBrowseCarousel(`Basado en tus gustos: Porque amaste ${oracleSourceAnime.title}...`, oracleRecommendations)}
+                </div>
+              )}
               {renderBrowseCarousel("Tendencias Actuales", browseData.trending)}
               {renderBrowseCarousel("Popular Esta Temporada (Próximos)", browseData.upcoming)}
               {renderBrowseCarousel("Popular De Todos Los Tiempos", browseData.popular)}
@@ -1771,17 +1816,42 @@ export default function App() {
                       <p className="text-[10px] text-slate-500 font-bold uppercase">Estado de Emisión</p><p className="text-xs font-semibold text-slate-200">{detailsExtraInfo.status}</p>
                     </div>
                   </div>
+
                   {selectedDetails.notes && (
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5"><MessageSquare size={14} /> Tus Notas</h4>
+                    <div className="mb-6">
+                      <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-widest flex items-center gap-2"><BookOpen size={14} /> Notas Personales</h3>
                       <p className="text-xs text-slate-300 italic bg-indigo-500/5 p-3.5 rounded-xl border border-indigo-500/20">{selectedDetails.notes}</p>
                     </div>
                   )}
-                  {detailsExtraInfo.genres && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {detailsExtraInfo.genres.map(g => (<span key={g.mal_id} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">{g.name}</span>))}
+
+                  {/* CALCULADORA DE MARATÓN INTELIGENTE */}
+                  {selectedDetails.status !== 'Terminado' && selectedDetails.totalEpisodes > 0 && (
+                    <div className="mb-6 bg-gradient-to-r from-pink-500/10 to-purple-500/10 border border-pink-500/20 rounded-2xl p-4 flex items-center gap-4 shadow-lg shadow-pink-500/5 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
+                        <Clock size={80} />
+                      </div>
+                      <div className="w-12 h-12 rounded-full bg-pink-500/20 flex items-center justify-center shrink-0 border border-pink-500/30 relative z-10">
+                        <Clock className="text-pink-400 w-6 h-6" />
+                      </div>
+                      <div className="relative z-10">
+                        <h3 className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                          <Zap size={12} /> Calculadora de Maratón
+                        </h3>
+                        <p className="text-sm font-medium text-slate-200">
+                          Te faltan <span className="font-bold text-white text-lg">{selectedDetails.totalEpisodes - (selectedDetails.progress || 0)}</span> episodios.
+                          Aprox. <span className="font-bold text-white text-lg">{((selectedDetails.totalEpisodes - (selectedDetails.progress || 0)) * (selectedDetails.duration || 24) / 60).toFixed(1)}</span> horas de visualización para terminar.
+                        </p>
+                      </div>
                     </div>
                   )}
+
+                  <div className="grid grid-cols-2 gap-3 mt-auto">
+                    {detailsExtraInfo.genres && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {detailsExtraInfo.genres.map(g => (<span key={g.mal_id} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">{g.name}</span>))}
+                      </div>
+                    )}
+                  </div>
                   {detailsExtraInfo.trailer?.url && (
                     <a href={detailsExtraInfo.trailer.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-red-600/10 hover:bg-red-600 border border-red-500/30 hover:border-red-600 text-red-400 hover:text-white rounded-2xl text-xs sm:text-sm font-bold transition-all">Ver Tráiler Oficial en YouTube <ArrowUpRight size={16} /></a>
                   )}
