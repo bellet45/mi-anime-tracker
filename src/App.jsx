@@ -219,8 +219,25 @@ export default function App() {
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
-      showToast("¡Sesión iniciada con Google con éxito!", "success");
+      const currentAnimes = [...animes];
+      const wasAnonymous = user && user.isAnonymous;
+
+      const result = await signInWithPopup(auth, provider);
+      const newUser = result.user;
+
+      if (wasAnonymous && currentAnimes.length > 0) {
+        showToast("Sincronizando tus animes con la nube...", "info");
+        const animesRef = collection(db, 'artifacts', appId, 'users', newUser.uid, 'animes');
+
+        const promises = currentAnimes.map(anime =>
+          setDoc(doc(animesRef, anime.id), anime, { merge: true })
+        );
+        await Promise.all(promises);
+
+        showToast("¡Tus animes se han sincronizado con tu cuenta de Google!", "success");
+      } else {
+        showToast("¡Sesión iniciada con Google con éxito!", "success");
+      }
     } catch (error) {
       setErrorMsg("No se pudo iniciar sesión con Google.");
       showToast("Error de autenticación con Google", "error");
@@ -1692,6 +1709,122 @@ export default function App() {
               </div>
             </div>
           </div>
+        </main>
+      )}
+
+      {currentView === 'list' && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
+          {viewingSharedList && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 rounded-3xl flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <img src={viewingSharedList.photoURL} className="w-10 h-10 rounded-full border border-blue-500" />
+                <div><h3 className="font-bold text-white text-base">Viendo lista de {viewingSharedList.username}</h3><p className="text-xs text-slate-400">Puedes clonar sus animes.</p></div>
+              </div>
+              <button onClick={() => setViewingSharedList(null)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-4 py-2 rounded-xl transition-colors">Volver a Mi Lista</button>
+            </div>
+          )}
+
+          {loadingData ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Loader2 className="w-12 h-12 mb-4 animate-spin text-purple-500" /><p className="font-medium">Sincronizando...</p></div>
+          ) : animesToRender.filter(Boolean).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <Tv className="w-16 h-16 mb-4 opacity-20" />
+              <p className="text-lg">No hay animes de momento.</p>
+              {!viewingSharedList && (<button onClick={() => setCurrentView('catalog')} className="mt-4 text-purple-400 hover:text-purple-300 font-bold text-sm">¡Explora el catálogo!</button>)}
+            </div>
+          ) : (
+            <div className={listLayout === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6" : "flex flex-col gap-3 sm:gap-4"}>
+              {animesToRender.filter(Boolean).map(anime => {
+                const statusConf = STATUS_CONFIG[anime.status] || STATUS_CONFIG['Viendo'];
+                const StatusIcon = statusConf.icon;
+                const progressPercent = anime.totalEpisodes ? Math.min(100, Math.round((anime.progress / anime.totalEpisodes) * 100)) : 0;
+
+                if (listLayout === 'grid') {
+                  return (
+                    <div key={anime.id || anime.title} onClick={() => handleOpenDetails(anime)} className="group relative bg-[#1e293b] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10 cursor-pointer">
+                      <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
+                        {anime.coverUrl ? (<img src={anime.coverUrl} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />) : (<div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8 sm:w-12 sm:h-12" /></div>)}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/20 to-transparent opacity-90" />
+
+                        <div className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3 flex gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                          {viewingSharedList ? (
+                            <button onClick={() => handleCloneAnime(anime)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-blue-600 text-white transition-colors"><ArrowUpRight className="w-3.5 h-3.5" /></button>
+                          ) : (
+                            <>
+                              <button onClick={() => handleOpenModal(anime)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleDelete(anime.id)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3">
+                          <div className={`flex items-center gap-1 sm:gap-1.5 px-1 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[8px] sm:text-xs font-bold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
+                            <StatusIcon className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">{anime.status}</span>
+                          </div>
+                        </div>
+
+                        <div className="absolute bottom-0 left-0 w-full p-2.5 sm:p-4">
+                          <h3 className="text-[10px] sm:text-base font-bold text-white line-clamp-2 leading-tight mb-1 sm:mb-2 drop-shadow-md">{anime.title}</h3>
+                          <div className="space-y-1 sm:space-y-1.5">
+                            <div className="flex justify-between text-[9px] sm:text-xs text-slate-300 font-bold"><span>EP {anime.progress} <span className="hidden sm:inline">/ {anime.totalEpisodes || '?'}</span></span><span>{progressPercent}%</span></div>
+                            <div className="h-1 sm:h-1.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50"><div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} /></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {!viewingSharedList && (
+                        <div className="bg-[#1e293b] p-1 sm:p-2 border-t border-slate-700/50 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                          <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="text-[10px] font-bold px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md transition-all disabled:opacity-40">-1</button>
+                          <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">Progreso</span>
+                          <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all">+1 EP</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={anime.id || anime.title} onClick={() => handleOpenDetails(anime)} className="group flex flex-row bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer">
+                    <div className="relative w-20 sm:w-28 shrink-0 bg-slate-800">
+                      {anime.coverUrl ? (<img src={anime.coverUrl} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />) : (<div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8" /></div>)}
+                    </div>
+                    <div className="flex-1 p-3 sm:p-5 flex flex-col justify-between min-w-0">
+                      <div className="flex justify-between items-start gap-2 sm:gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-1 sm:mb-2">
+                            <div className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-[9px] sm:text-xs font-bold ${statusConf.bg} ${statusConf.color} border ${statusConf.border} w-fit`}>
+                              <StatusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {anime.status}
+                            </div>
+                          </div>
+                          <h3 className="text-xs sm:text-xl font-bold text-white mb-0.5 sm:mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
+                          {anime.genres && anime.genres.length > 0 && <p className="text-[9px] sm:text-xs text-slate-500 truncate">{anime.genres.slice(0, 3).join(', ')}</p>}
+                        </div>
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {viewingSharedList ? (
+                            <button onClick={() => handleCloneAnime(anime)} className="p-2 bg-slate-800 hover:bg-blue-600 text-white rounded-xl transition-all" title="Clonar"><ArrowUpRight size={14} /></button>
+                          ) : (
+                            <>
+                              <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                              <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 ml-1">
+                                <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="px-2 py-1 text-slate-500 hover:text-white font-mono text-xs">-</button>
+                                <span className="text-xs px-1 text-slate-400 font-bold">{anime.progress}</span>
+                                <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="px-2 py-1 text-purple-400 hover:text-white font-mono text-xs">+</button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-2 sm:mt-4 w-full">
+                        <div className="flex justify-between text-[10px] sm:text-xs text-slate-400 font-semibold mb-1"><span>Episodios: {anime.progress} / {anime.totalEpisodes || '?'}</span><span>{progressPercent}%</span></div>
+                        <div className="h-1.5 sm:h-2 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50"><div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} /></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </main>
       )}
 
