@@ -6,7 +6,7 @@ import {
   Target, Flame, Medal, Download, Compass,
   LayoutGrid, List, Calendar, Upload, Share2, Users, ArrowUpRight,
   Sparkles, Check, Info, AlertTriangle, BookOpen, MessageSquare, Heart,
-  Gamepad2, Dices, Award, Zap, Menu, ChevronDown
+  Gamepad2, Dices, Award, Zap, Menu, ChevronDown, Music
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -21,7 +21,6 @@ const firebaseConfig = {
   messagingSenderId: "281744457691",
   appId: "1:281744457691:web:d1eaaf8c679fb60d82f1fe"
 };
-
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -124,6 +123,15 @@ export default function App() {
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [detailsExtraInfo, setDetailsExtraInfo] = useState(null);
 
+  // Estados para Personajes y Temas Musicales
+  const [detailsCharacters, setDetailsCharacters] = useState([]);
+  const [detailsThemes, setDetailsThemes] = useState({ openings: [], endings: [] });
+
+  // NUEVOS ESTADOS: Traductor de Sinopsis
+  const [synopsisEs, setSynopsisEs] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showSpanishSynopsis, setShowSpanishSynopsis] = useState(false);
+
   const [isPublic, setIsPublic] = useState(false);
   const [sharedProfiles, setSharedProfiles] = useState([]);
   const [isCommunityLoading, setIsCommunityLoading] = useState(false);
@@ -148,7 +156,6 @@ export default function App() {
   const [winnerAnime, setWinnerAnime] = useState(null);
   const carouselRef = useRef(null);
 
-  // NUEVO: Referencia para controlar que el Auto-Sync se ejecute una sola vez por sesión
   const hasAutoSynced = useRef(false);
 
   const showToast = (message, type = 'success') => {
@@ -261,18 +268,17 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- NUEVA FUNCIÓN: AUTO-SINCRONIZACIÓN DE EPISODIOS EN EMISIÓN ---
+  // AUTO-SINCRONIZACIÓN DE EPISODIOS EN EMISIÓN
   useEffect(() => {
     if (!user || animes.length === 0 || hasAutoSynced.current) return;
 
     const syncAiringAnimes = async () => {
-      hasAutoSynced.current = true; // Bloquea múltiples ejecuciones
+      hasAutoSynced.current = true;
       const lastSync = localStorage.getItem('otaku_auto_sync_date');
       const today = new Date().toDateString();
 
-      if (lastSync === today) return; // Solo sincronizamos 1 vez al día para no saturar
+      if (lastSync === today) return;
 
-      // Filtramos solo los animes que estás viendo y que tienen un ID válido
       const viendoAnimes = animes.filter(a => a.status === 'Viendo' && a.malId);
       if (viendoAnimes.length === 0) {
         localStorage.setItem('otaku_auto_sync_date', today);
@@ -297,14 +303,12 @@ export default function App() {
           let newTotal = anime.totalEpisodes || 0;
           let shouldUpdate = false;
 
-          // 1er Caso: El anime tiene un total definido en la API y es mayor a lo que tenemos
           if (apiAnime.episodes && apiAnime.episodes > newTotal) {
             newTotal = apiAnime.episodes;
             shouldUpdate = true;
           }
-          // 2do Caso: Anime infinito/emisión (Ej. One Piece). La API no pone total, buscamos los emitidos
           else if (apiAnime.status === "Currently Airing" && !apiAnime.episodes) {
-            await new Promise(r => setTimeout(r, 450)); // Respeto al Rate Limit
+            await new Promise(r => setTimeout(r, 450));
             const epRes = await fetch(`https://api.jikan.moe/v4/anime/${anime.malId}/episodes`);
             if (epRes.ok) {
               const epData = await epRes.json();
@@ -316,13 +320,12 @@ export default function App() {
             }
           }
 
-          // Si hay episodios nuevos, se actualiza silenciosamente en Firebase
           if (shouldUpdate) {
             await setDoc(doc(animesRef, anime.id), { ...anime, totalEpisodes: newTotal }, { merge: true });
             updatedCount++;
           }
 
-          await new Promise(r => setTimeout(r, 450)); // Respetar Rate-limit de Jikan
+          await new Promise(r => setTimeout(r, 450));
         } catch (e) {
           console.error("Error auto-sincronizando", anime.title, e);
         }
@@ -336,7 +339,6 @@ export default function App() {
 
     syncAiringAnimes();
   }, [user, animes]);
-  // --- FIN DE LA NUEVA FUNCIÓN ---
 
   useEffect(() => {
     if (!user) return;
@@ -438,7 +440,6 @@ export default function App() {
     setApiSearchQuery('');
   };
 
-  // --- LÓGICA ACTUALIZADA DEL NAVEGADOR (CATÁLOGO TIPO ANILIST CON FILTROS) ---
   useEffect(() => {
     if (currentView !== 'catalog') return;
     let isActive = true;
@@ -447,7 +448,6 @@ export default function App() {
       const isFiltering = catalogSearch.trim().length > 2 || catalogGenre || catalogYear || catalogSeason || catalogFormat;
 
       if (isFiltering) {
-        // Modo Búsqueda y Filtros
         setIsCatalogLoading(true);
         try {
           let url = `https://api.jikan.moe/v4/anime?limit=24`;
@@ -474,22 +474,18 @@ export default function App() {
           if (isActive) setIsCatalogLoading(false);
         }
       } else {
-        // Modo Navegador AniList (Si no hay filtros activos y no se han cargado)
         if (browseData.trending.length === 0) {
           setIsCatalogLoading(true);
           try {
             triggerQuestComplete('explorar');
-            // Fetch 1: Tendencias (En emisión)
             const res1 = await fetch('https://api.jikan.moe/v4/seasons/now?limit=12');
             const data1 = await res1.json();
             await new Promise(r => setTimeout(r, 450));
 
-            // Fetch 2: Próximos
             const res2 = await fetch('https://api.jikan.moe/v4/seasons/upcoming?limit=12');
             const data2 = await res2.json();
             await new Promise(r => setTimeout(r, 450));
 
-            // Fetch 3: Populares de todos los tiempos
             const res3 = await fetch('https://api.jikan.moe/v4/top/anime?bypopularity=true&limit=12');
             const data3 = await res3.json();
 
@@ -506,7 +502,6 @@ export default function App() {
             if (isActive) setIsCatalogLoading(false);
           }
         } else {
-          // Limpiar los resultados si borró todos los filtros
           if (isActive) setCatalogAnimes([]);
         }
       }
@@ -516,7 +511,6 @@ export default function App() {
     return () => { isActive = false; clearTimeout(timer); };
   }, [currentView, catalogSearch, catalogGenre, catalogYear, catalogSeason, catalogFormat]);
 
-  // --- ORÁCULO DE LA IA ---
   useEffect(() => {
     if (currentView !== 'catalog') return;
 
@@ -574,10 +568,9 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  // Helper para renderizar los carruseles del nuevo navegador
-  const renderBrowseCarousel = (title, animeList) => {
+  const renderBrowseCarousel = (title, animeList, id) => {
     if (!animeList || animeList.length === 0) return null;
-    const carouselId = `carousel-${title.replace(/\s+/g, '-').toLowerCase()}`;
+    const carouselId = id || `carousel-${title.replace(/\s+/g, '-').toLowerCase()}`;
 
     const scroll = (direction) => {
       const container = document.getElementById(carouselId);
@@ -655,11 +648,20 @@ export default function App() {
     return () => { isActive = false; };
   }, [currentView, animes]);
 
+  // --- FUNCIÓN PARA ABRIR WIKI CON FIX DE IMÁGENES Y RESET DE TRADUCCIÓN ---
   const handleOpenDetails = async (anime) => {
     if (!anime) return;
     setSelectedDetails(anime);
     setDetailsExtraInfo(null);
+    setDetailsCharacters([]);
+    setDetailsThemes({ openings: [], endings: [] });
+
+    // Resetear estados del traductor al abrir un nuevo anime
+    setSynopsisEs('');
+    setShowSpanishSynopsis(false);
+
     setIsDetailsLoading(true);
+
     const targetMalId = anime.malId || anime.mal_id;
     try {
       if (targetMalId) {
@@ -668,15 +670,69 @@ export default function App() {
           const data = await res.json();
           setDetailsExtraInfo(data.data);
         }
+
+        try {
+          const fetchChars = fetch(`https://api.jikan.moe/v4/anime/${targetMalId}/characters`).then(r => r.json()).catch(() => null);
+          const fetchThemes = fetch(`https://api.jikan.moe/v4/anime/${targetMalId}/themes`).then(r => r.json()).catch(() => null);
+
+          const [charData, themeData] = await Promise.all([fetchChars, fetchThemes]);
+
+          if (charData && charData.data) {
+            const mainChars = charData.data.filter(c => c.role === 'Main' || c.role === 'Supporting').slice(0, 12);
+            setDetailsCharacters(mainChars);
+          }
+          if (themeData && themeData.data) {
+            setDetailsThemes(themeData.data);
+          }
+        } catch (e) { }
+
       } else {
         const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(anime.title)}&limit=1`);
         if (res.ok) {
           const data = await res.json();
-          if (data.data && data.data.length > 0) setDetailsExtraInfo(data.data[0]);
+          if (data.data && data.data.length > 0) {
+            setDetailsExtraInfo(data.data[0]);
+
+            const fallbackId = data.data[0].mal_id;
+            try {
+              const fetchChars = fetch(`https://api.jikan.moe/v4/anime/${fallbackId}/characters`).then(r => r.json()).catch(() => null);
+              const fetchThemes = fetch(`https://api.jikan.moe/v4/anime/${fallbackId}/themes`).then(r => r.json()).catch(() => null);
+
+              const [charData, themeData] = await Promise.all([fetchChars, fetchThemes]);
+
+              if (charData && charData.data) {
+                const mainChars = charData.data.filter(c => c.role === 'Main' || c.role === 'Supporting').slice(0, 12);
+                setDetailsCharacters(mainChars);
+              }
+              if (themeData && themeData.data) {
+                setDetailsThemes(themeData.data);
+              }
+            } catch (e) { }
+          }
         }
       }
     } catch (e) { } finally {
       setIsDetailsLoading(false);
+    }
+  };
+
+  // --- NUEVA FUNCIÓN: TRADUCIR SINOPSIS CON GOOGLE API (GRATUITA) ---
+  const handleTranslateSynopsis = async (text) => {
+    if (synopsisEs) {
+      setShowSpanishSynopsis(true);
+      return;
+    }
+    setIsTranslating(true);
+    try {
+      const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(text)}`);
+      const data = await res.json();
+      const translatedText = data[0].map(item => item[0]).join('');
+      setSynopsisEs(translatedText);
+      setShowSpanishSynopsis(true);
+    } catch (e) {
+      showToast("Error al traducir la sinopsis. Inténtalo más tarde.", "error");
+    } finally {
+      setIsTranslating(false);
     }
   };
 
@@ -782,25 +838,6 @@ export default function App() {
   });
 
   const animesToRender = viewingSharedList ? (viewingSharedList.animes || []) : filteredAnimes;
-
-  const handleOpenModal = (anime = null) => {
-    setErrorMsg('');
-    setApiResults([]);
-    setApiSearchQuery('');
-    if (anime) {
-      setFormData({
-        title: anime.title || '', status: anime.status || 'Viendo', progress: anime.progress || 0,
-        totalEpisodes: anime.totalEpisodes || 12, watchUrl: anime.watchUrl || '', coverUrl: anime.coverUrl || '',
-        rating: anime.rating || 0, duration: anime.duration || 24, genres: anime.genres || [],
-        malId: anime.malId || '', notes: anime.notes || ''
-      });
-      setEditingId(anime.id);
-    } else {
-      setFormData({ title: '', status: 'Viendo', progress: 0, totalEpisodes: 0, watchUrl: '', coverUrl: '', rating: 0, duration: 24, genres: [], malId: '', notes: '' });
-      setEditingId(null);
-    }
-    setIsModalOpen(true);
-  };
 
   const handleCloseModal = () => { setIsModalOpen(false); setEditingId(null); };
 
@@ -1523,7 +1560,7 @@ export default function App() {
                     </div>
                     <div className="grid grid-cols-4 gap-2 mb-4">
                       {(profile.animes || []).slice(0, 4).map((anime, i) => (
-                        <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden bg-slate-950 relative group">
+                        <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden bg-slate-900 relative group">
                           <img src={anime?.coverUrl || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" onError={(e) => e.target.src = 'https://via.placeholder.com/100'} />
                           {anime?.rating > 0 && <div className="absolute top-1 left-1 bg-slate-900/95 px-1 py-0.5 rounded text-[8px] text-yellow-500 flex items-center gap-0.5">★{anime.rating}</div>}
                         </div>
@@ -1658,133 +1695,17 @@ export default function App() {
         </main>
       )}
 
-      {currentView === 'list' && (
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4">
-          {viewingSharedList && (
-            <div className="mb-6 p-4 bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-500/30 rounded-3xl flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-3">
-                <img src={viewingSharedList.photoURL} className="w-10 h-10 rounded-full border border-blue-500" />
-                <div><h3 className="font-bold text-white text-base">Viendo lista de {viewingSharedList.username}</h3><p className="text-xs text-slate-400">Puedes clonar sus animes.</p></div>
-              </div>
-              <button onClick={() => setViewingSharedList(null)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-4 py-2 rounded-xl transition-colors">Volver a Mi Lista</button>
-            </div>
-          )}
-
-          {loadingData ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500"><Loader2 className="w-12 h-12 mb-4 animate-spin text-purple-500" /><p className="font-medium">Sincronizando...</p></div>
-          ) : animesToRender.filter(Boolean).length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-              <Tv className="w-16 h-16 mb-4 opacity-20" />
-              <p className="text-lg">No hay animes de momento.</p>
-              {!viewingSharedList && (<button onClick={() => setCurrentView('catalog')} className="mt-4 text-purple-400 hover:text-purple-300 font-bold text-sm">¡Explora el catálogo!</button>)}
-            </div>
-          ) : (
-            <div className={listLayout === 'grid' ? "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-6" : "flex flex-col gap-3 sm:gap-4"}>
-              {animesToRender.filter(Boolean).map(anime => {
-                const statusConf = STATUS_CONFIG[anime.status] || STATUS_CONFIG['Viendo'];
-                const StatusIcon = statusConf.icon;
-                const progressPercent = anime.totalEpisodes ? Math.min(100, Math.round((anime.progress / anime.totalEpisodes) * 100)) : 0;
-
-                if (listLayout === 'grid') {
-                  return (
-                    <div key={anime.id || anime.title} onClick={() => handleOpenDetails(anime)} className="group relative bg-[#1e293b] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10 cursor-pointer">
-                      <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-800">
-                        {anime.coverUrl ? (<img src={anime.coverUrl} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />) : (<div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8 sm:w-12 sm:h-12" /></div>)}
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/20 to-transparent opacity-90" />
-
-                        <div className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3 flex gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                          {viewingSharedList ? (
-                            <button onClick={() => handleCloneAnime(anime)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-blue-600 text-white transition-colors"><ArrowUpRight className="w-3.5 h-3.5" /></button>
-                          ) : (
-                            <>
-                              <button onClick={() => handleOpenModal(anime)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-purple-600 text-white transition-colors"><Edit3 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
-                              <button onClick={() => handleDelete(anime.id)} className="p-1 sm:p-2 bg-black/75 backdrop-blur rounded-full hover:bg-red-600 text-white transition-colors"><Trash2 className="w-3 h-3 sm:w-4 sm:h-4" /></button>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3">
-                          <div className={`flex items-center gap-1 sm:gap-1.5 px-1 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[8px] sm:text-xs font-bold backdrop-blur-md ${statusConf.bg} ${statusConf.color} border ${statusConf.border}`}>
-                            <StatusIcon className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">{anime.status}</span>
-                          </div>
-                        </div>
-
-                        <div className="absolute bottom-0 left-0 w-full p-2.5 sm:p-4">
-                          <h3 className="text-[10px] sm:text-base font-bold text-white line-clamp-2 leading-tight mb-1 sm:mb-2 drop-shadow-md">{anime.title}</h3>
-                          <div className="space-y-1 sm:space-y-1.5">
-                            <div className="flex justify-between text-[9px] sm:text-xs text-slate-300 font-bold"><span>EP {anime.progress} <span className="hidden sm:inline">/ {anime.totalEpisodes || '?'}</span></span><span>{progressPercent}%</span></div>
-                            <div className="h-1 sm:h-1.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50"><div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} /></div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {!viewingSharedList && (
-                        <div className="bg-[#1e293b] p-1 sm:p-2 border-t border-slate-700/50 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
-                          <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="text-[10px] font-bold px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md transition-all disabled:opacity-40">-1</button>
-                          <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">Progreso</span>
-                          <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all">+1 EP</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={anime.id || anime.title} onClick={() => handleOpenDetails(anime)} className="group flex flex-row bg-[#1e293b] rounded-2xl overflow-hidden border border-slate-700/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer">
-                    <div className="relative w-20 sm:w-28 shrink-0 bg-slate-800">
-                      {anime.coverUrl ? (<img src={anime.coverUrl} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://via.placeholder.com/400x600/1e293b/475569?text=Sin+Portada' }} />) : (<div className="w-full h-full flex items-center justify-center text-slate-600"><ImageIcon className="w-8 h-8" /></div>)}
-                    </div>
-                    <div className="flex-1 p-3 sm:p-5 flex flex-col justify-between min-w-0">
-                      <div className="flex justify-between items-start gap-2 sm:gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 mb-1 sm:mb-2">
-                            <div className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-[9px] sm:text-xs font-bold ${statusConf.bg} ${statusConf.color} border ${statusConf.border} w-fit`}>
-                              <StatusIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {anime.status}
-                            </div>
-                          </div>
-                          <h3 className="text-xs sm:text-xl font-bold text-white mb-0.5 sm:mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
-                          {anime.genres && anime.genres.length > 0 && <p className="text-[9px] sm:text-xs text-slate-500 truncate">{anime.genres.slice(0, 3).join(', ')}</p>}
-                        </div>
-                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          {viewingSharedList ? (
-                            <button onClick={() => handleCloneAnime(anime)} className="p-2 bg-slate-800 hover:bg-blue-600 text-white rounded-xl transition-all" title="Clonar"><ArrowUpRight size={14} /></button>
-                          ) : (
-                            <>
-                              <button onClick={() => handleOpenModal(anime)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-purple-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Editar"><Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                              <button onClick={() => handleDelete(anime.id)} className="p-1.5 sm:p-2 bg-slate-800 hover:bg-red-600 rounded-lg sm:rounded-xl text-white transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 ml-1">
-                                <button disabled={anime.progress === 0} onClick={(e) => handleQuickProgress(e, anime, -1)} className="px-2 py-1 text-slate-500 hover:text-white font-mono text-xs">-</button>
-                                <span className="text-xs px-1 text-slate-400 font-bold">{anime.progress}</span>
-                                <button onClick={(e) => handleQuickProgress(e, anime, 1)} className="px-2 py-1 text-purple-400 hover:text-white font-mono text-xs">+</button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-2 sm:mt-4 w-full">
-                        <div className="flex justify-between text-[10px] sm:text-xs text-slate-400 font-semibold mb-1"><span>Episodios: {anime.progress} / {anime.totalEpisodes || '?'}</span><span>{progressPercent}%</span></div>
-                        <div className="h-1.5 sm:h-2 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50"><div className={`h-full rounded-full transition-all duration-500 ${anime.status === 'Terminado' ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${progressPercent}%` }} /></div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </main>
-      )}
-
       {/* --- WIKI & DETALLES DRAWER / MODAL --- */}
       {selectedDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-end">
           <div className="absolute inset-0 bg-[#0f172a]/80 backdrop-blur-sm" onClick={() => setSelectedDetails(null)} />
           <div className="relative h-full w-full max-w-xl bg-[#0f172a] border-l border-slate-800 shadow-2xl overflow-y-auto custom-scrollbar flex flex-col justify-between animate-in slide-in-from-right duration-300">
             <div className="relative aspect-video w-full bg-[#0f172a]">
-              <img src={selectedDetails.coverUrl} className="w-full h-full object-cover opacity-30 filter blur-sm absolute inset-0" />
+              <img src={(selectedDetails.coverUrl || selectedDetails.images?.jpg?.large_image_url) || 'https://via.placeholder.com/400x600'} className="w-full h-full object-cover opacity-30 filter blur-sm absolute inset-0" />
               <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] to-transparent" />
               <button onClick={() => setSelectedDetails(null)} className="absolute top-4 right-4 p-2 bg-[#0f172a]/80 hover:bg-slate-800/80 rounded-full text-white border border-slate-800 transition-colors z-10"><X size={20} /></button>
               <div className="absolute bottom-4 left-4 right-4 flex gap-4 items-end">
-                <img src={selectedDetails.coverUrl} className="w-20 sm:w-28 aspect-[3/4] object-cover rounded-xl border border-slate-800 shadow-2xl" />
+                <img src={(selectedDetails.coverUrl || selectedDetails.images?.jpg?.large_image_url) || 'https://via.placeholder.com/400x600'} className="w-20 sm:w-28 aspect-[3/4] object-cover rounded-xl border border-slate-800 shadow-2xl" />
                 <div className="flex-1 min-w-0">
                   <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 text-[10px] font-bold rounded-md tracking-wider uppercase">Wiki Info</span>
                   <h2 className="text-sm sm:text-xl font-black text-white leading-tight mt-1 line-clamp-2">{selectedDetails.title}</h2>
@@ -1798,8 +1719,18 @@ export default function App() {
                 <>
                   {detailsExtraInfo.synopsis && (
                     <div className="space-y-2">
-                      <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5"><BookOpen size={14} /> Sinopsis</h4>
-                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed bg-[#1e293b] p-4 rounded-2xl border border-slate-800">{detailsExtraInfo.synopsis}</p>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5"><BookOpen size={14} /> Sinopsis</h4>
+                        <div className="flex bg-slate-900 rounded-lg p-0.5 border border-slate-700">
+                          <button onClick={() => setShowSpanishSynopsis(false)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${!showSpanishSynopsis ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}>EN</button>
+                          <button onClick={() => handleTranslateSynopsis(detailsExtraInfo.synopsis)} disabled={isTranslating} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 ${showSpanishSynopsis ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                            {isTranslating ? <Loader2 size={10} className="animate-spin" /> : 'ES'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed bg-[#1e293b] p-4 rounded-2xl border border-slate-800">
+                        {showSpanishSynopsis ? synopsisEs : detailsExtraInfo.synopsis}
+                      </p>
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-3">
@@ -1817,41 +1748,70 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* --- NUEVO: PERSONAJES Y REPARTO --- */}
+                  {detailsCharacters.length > 0 && (
+                    <div className="space-y-3 pt-4 border-t border-slate-800">
+                      <h4 className="text-xs font-bold text-pink-400 uppercase tracking-widest flex items-center gap-1.5"><Users size={14} /> Reparto Principal</h4>
+                      <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2">
+                        {detailsCharacters.map(c => {
+                          const voiceActor = c.voice_actors?.find(va => va.language === 'Japanese');
+                          return (
+                            <div key={c.character.mal_id} className="shrink-0 flex items-center bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden w-48 shadow-md">
+                              <img src={c.character.images?.jpg?.image_url} className="w-12 h-16 object-cover bg-slate-800 shrink-0" />
+                              <div className="p-2 flex-1 min-w-0">
+                                <p className="text-[10px] font-bold text-white line-clamp-1">{c.character.name}</p>
+                                <p className="text-[9px] text-pink-400 mb-1">{c.role}</p>
+                                {voiceActor && (
+                                  <p className="text-[8px] text-slate-400 line-clamp-1 border-t border-slate-700 pt-0.5 mt-0.5" title={voiceActor.person.name}>VA: {voiceActor.person.name}</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- NUEVO: TEMAS MUSICALES --- */}
+                  {(detailsThemes?.openings?.length > 0 || detailsThemes?.endings?.length > 0) && (
+                    <div className="space-y-3 pt-4 border-t border-slate-800">
+                      <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5"><Music size={14} /> Banda Sonora</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {detailsThemes.openings?.length > 0 && (
+                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                            <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">Openings</p>
+                            <ul className="text-[10px] text-slate-300 space-y-2">
+                              {detailsThemes.openings.slice(0, 4).map((op, i) => (
+                                <li key={i} className="flex gap-2 items-start"><span className="text-blue-400 mt-0.5">♪</span> <span className="line-clamp-2">{op}</span></li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {detailsThemes.endings?.length > 0 && (
+                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                            <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">Endings</p>
+                            <ul className="text-[10px] text-slate-300 space-y-2">
+                              {detailsThemes.endings.slice(0, 4).map((ed, i) => (
+                                <li key={i} className="flex gap-2 items-start"><span className="text-purple-400 mt-0.5">♪</span> <span className="line-clamp-2">{ed}</span></li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {detailsExtraInfo.genres && (
+                    <div className="flex flex-wrap gap-1.5 pt-4 border-t border-slate-800">
+                      {detailsExtraInfo.genres.map(g => (<span key={g.mal_id} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">{g.name}</span>))}
+                    </div>
+                  )}
                   {selectedDetails.notes && (
-                    <div className="mb-6">
-                      <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-widest flex items-center gap-2"><BookOpen size={14} /> Notas Personales</h3>
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5"><MessageSquare size={14} /> Tus Notas</h4>
                       <p className="text-xs text-slate-300 italic bg-indigo-500/5 p-3.5 rounded-xl border border-indigo-500/20">{selectedDetails.notes}</p>
                     </div>
                   )}
-
-                  {/* CALCULADORA DE MARATÓN INTELIGENTE */}
-                  {selectedDetails.status !== 'Terminado' && selectedDetails.totalEpisodes > 0 && (
-                    <div className="mb-6 bg-gradient-to-r from-pink-500/10 to-purple-500/10 border border-pink-500/20 rounded-2xl p-4 flex items-center gap-4 shadow-lg shadow-pink-500/5 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
-                        <Clock size={80} />
-                      </div>
-                      <div className="w-12 h-12 rounded-full bg-pink-500/20 flex items-center justify-center shrink-0 border border-pink-500/30 relative z-10">
-                        <Clock className="text-pink-400 w-6 h-6" />
-                      </div>
-                      <div className="relative z-10">
-                        <h3 className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                          <Zap size={12} /> Calculadora de Maratón
-                        </h3>
-                        <p className="text-sm font-medium text-slate-200">
-                          Te faltan <span className="font-bold text-white text-lg">{selectedDetails.totalEpisodes - (selectedDetails.progress || 0)}</span> episodios.
-                          Aprox. <span className="font-bold text-white text-lg">{((selectedDetails.totalEpisodes - (selectedDetails.progress || 0)) * (selectedDetails.duration || 24) / 60).toFixed(1)}</span> horas de visualización para terminar.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3 mt-auto">
-                    {detailsExtraInfo.genres && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {detailsExtraInfo.genres.map(g => (<span key={g.mal_id} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">{g.name}</span>))}
-                      </div>
-                    )}
-                  </div>
                   {detailsExtraInfo.trailer?.url && (
                     <a href={detailsExtraInfo.trailer.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-red-600/10 hover:bg-red-600 border border-red-500/30 hover:border-red-600 text-red-400 hover:text-white rounded-2xl text-xs sm:text-sm font-bold transition-all">Ver Tráiler Oficial en YouTube <ArrowUpRight size={16} /></a>
                   )}
@@ -1909,7 +1869,7 @@ export default function App() {
           <div className="relative w-full max-w-xl bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                {editingId ? 'Editar Progreso' : 'Añadir a mi lista'}
+                {editingId ? 'Editar Progreso' : 'Buscar y Añadir'}
               </h2>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-white transition-colors">
                 <X className="w-6 h-6" />
